@@ -41,7 +41,7 @@ async def parse_directory_listing(html_content, base_url):
 async def fetch_and_parse_recursive(url):
     html_content = await fetch_directory_listing(url)
     files, directories = await parse_directory_listing(html_content, url)
-    print(f"Parsed: {unquote(url)}")
+    #print(f"Parsed: {unquote(url)}")
     subtasks = []
     for directory in directories:
         directory_url = urljoin(url, directory)
@@ -59,7 +59,8 @@ async def download_file(url, filename, media_path):
                 # Define the file path to save
                 file_path = os.path.join(media_path, filename.lstrip('/'))
                 # Ensure the directory for the file exists
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                os.umask(0)
+                os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
                 # Save the file
                 async with aiofiles.open(file_path, 'wb') as f:
                     while True:
@@ -67,7 +68,8 @@ async def download_file(url, filename, media_path):
                         if not chunk:
                             break
                         await f.write(chunk)
-                print(f"Downloaded: {filename}")
+                os.chmod(file_path, 0o777)
+                #print(f"Downloaded: {filename}")
             else:
                 print(f"Failed to download: {filename}")
 
@@ -111,7 +113,7 @@ async def main():
         conn = sqlite3.connect(db_file)
         conn.close()
 
-    url = 'https://emby.xiaoya.pro/%E6%AF%8F%E6%97%A5%E6%9B%B4%E6%96%B0/%E5%8A%A8%E6%BC%AB/%E6%97%A5%E6%9C%AC/2011/'
+    url = 'https://emby.xiaoya.pro/'
     files = await fetch_and_parse_recursive(url)
     if not args.no_download:
         await store_in_database(files, args.media)
