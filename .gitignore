@@ -1,3 +1,6 @@
+media
 media/*
-file_timestamps.db
+*.db
 *.sql
+.venv
+.DS*
