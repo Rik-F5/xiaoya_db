@@ -8,17 +8,17 @@ from datetime import datetime
 from urllib.parse import urljoin, urlparse, unquote
 import os
 
-# Function to fetch HTML content of the directory listing asynchronously
-async def fetch_directory_listing(url):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            try:
-                return await response.text()
-            except UnicodeDecodeError:
-                print(unquote(url))
-                return await response.text(errors='replace')
 
-# Asynchronous function to parse HTML and extract file names and timestamps
+async def fetch_directory_listing(url, session):
+    async with session.get(url) as response:
+        try:
+            return await response.text()
+        except UnicodeDecodeError:
+            print(unquote(url))
+            return await response.text(errors='replace')
+
+
+
 async def parse_directory_listing(html_content, base_url):
     soup = BeautifulSoup(html_content, 'html.parser')
     files = []
@@ -36,72 +36,81 @@ async def parse_directory_listing(html_content, base_url):
         elif href != '../':
             directories.append(href)
     return files, directories
+    
 
-# Asynchronous function to fetch and parse directory listings recursively
-async def fetch_and_parse_recursive(url):
-    html_content = await fetch_directory_listing(url)
+async def fetch_and_parse_recursive(url, session):
+    #print(f"Fetching and parsing: {url}")
+    html_content = await fetch_directory_listing(url, session)
     files, directories = await parse_directory_listing(html_content, url)
-    #print(f"Parsed: {unquote(url)}")
     subtasks = []
     for directory in directories:
         directory_url = urljoin(url, directory)
-        subtasks.append(fetch_and_parse_recursive(directory_url))
+        subtasks.append(fetch_and_parse_recursive(directory_url, session))
     subfiles = await asyncio.gather(*subtasks)
     for subfile_list in subfiles:
         files.extend(subfile_list)
     return files
 
-# Asynchronous function to download a file
-async def download_file(url, filename, media_path):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                # Define the file path to save
-                file_path = os.path.join(media_path, filename.lstrip('/'))
-                # Ensure the directory for the file exists
-                os.umask(0)
-                os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
-                # Save the file
-                async with aiofiles.open(file_path, 'wb') as f:
-                    while True:
-                        chunk = await response.content.read(1024)
-                        if not chunk:
-                            break
-                        await f.write(chunk)
-                os.chmod(file_path, 0o777)
-                #print(f"Downloaded: {filename}")
-            else:
-                print(f"Failed to download: {filename}")
+
+async def download_files(files, media_path, session):
+    download_tasks = []
+    for file_info in files:
+        url = file_info["url"]
+        filename = file_info["filename"]
+        download_tasks.append(asyncio.to_thread(download_file(url, filename, media_path, session)))
+    await asyncio.gather(*download_tasks)
+
+async def download_file(url, filename, media_path, session):
+    #print(f"Downloading: {filename}")
+    async with session.get(url) as response:
+        if response.status == 200:
+            file_path = os.path.join(media_path, filename.lstrip('/'))
+            os.umask(0)
+            os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
+            async with aiofiles.open(file_path, 'wb') as f:
+                #print("Starting to write file...")
+                await f.write(await response.content.read())
+                #print("Finished writing file.")
+            os.chmod(file_path, 0o777)
+            print(f"Downloaded: {filename}")
+        else:
+            print(f"Failed to download: {filename} [Response code: {response.status}]")
 
 
-
-# Function to store file names, timestamps, and download files if newer or not exist
-async def store_in_database(files, media_path, download=True):
+async def store_in_database(files, media_path, session, download=True):
+    print("Storing in database...")
     conn = sqlite3.connect('file_timestamps.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS files
                  (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
+    
+    download_tasks = []
     for filename, url, timestamp in files:
         c.execute('SELECT * FROM files WHERE url = ?', (url,))
         existing_record = c.fetchone()
         if existing_record:
-            if timestamp > existing_record[2] or not os.path.exists(os.path.join(media_path, filename.lstrip('/'))):
-                if download == True:
-                    await download_file(url, filename, media_path)
+            if timestamp > existing_record[2] or os.path.exists(os.path.join(media_path, filename.lstrip('/'))) == False:
+                if download:
+                    download_tasks.append(download_file(url, filename, media_path, session))
                 c.execute('UPDATE files SET filename = ?, timestamp = ? WHERE url = ?', (filename, timestamp, url))
         else:
-            if download == True:
-                await download_file(url, filename, media_path)
+            if download:
+                download_tasks.append(download_file(url, filename, media_path, session))
             c.execute('INSERT INTO files VALUES (?, ?, ?)', (url, filename, timestamp))
-    conn.commit()
-    conn.close()
+    
+    try:
+        await asyncio.wait_for(asyncio.gather(*download_tasks), timeout=3600)
+    except asyncio.TimeoutError:
+        print("Download tasks timed out.")
+    finally:
+        conn.commit()
+        conn.close()
+        print("Database storage complete.")
 
-# Main function
+
 async def main():
     parser = argparse.ArgumentParser()
-    # Get the directory path of the current Python file
     current_directory = os.path.dirname(__file__)
-    # Append "media" to the current directory path
     default_media_path = os.path.join(current_directory, "media")
     parser.add_argument("--media", type=str, default=default_media_path, help="Path to store downloaded media files")
     parser.add_argument("--no-download", action="store_true", help="Build database without downloading files")
@@ -109,18 +118,23 @@ async def main():
 
     db_file = 'file_timestamps.db'
     if not os.path.exists(db_file):
-        # If the database file doesn't exist, create a new one
         conn = sqlite3.connect(db_file)
         conn.close()
+    
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+        url = 'https://emby.xiaoya.pro/'
+        print("Fetching and parsing directory listings...")
+        files = await fetch_and_parse_recursive(url, session)
+        print("Directory listings fetched and parsed.")
+        if not args.no_download:
+            await store_in_database(files, args.media, session)
+        else:
+            await store_in_database(files, args.media, session, False)
 
-    url = 'https://emby.xiaoya.pro/'
-    files = await fetch_and_parse_recursive(url)
-    if not args.no_download:
-        await store_in_database(files, args.media)
-    else:
-        await store_in_database(files, args.media, False)
+        print("Files and timestamps stored/updated in the database successfully.")
 
-    print("Files and timestamps stored/updated in the database successfully.")
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
