@@ -4,9 +4,37 @@ import aiohttp
 import aiofiles
 from bs4 import BeautifulSoup
 import sqlite3
+from queue import Queue
+from threading import Lock
 from datetime import datetime
 from urllib.parse import urljoin, urlparse, unquote
 import os
+
+
+
+# Connection pool parameters
+POOL_SIZE = 5
+
+# Initialize connection pool
+connection_pool = Queue(maxsize=POOL_SIZE)
+connection_lock = Lock()
+
+def initialize_connection_pool():
+    for _ in range(POOL_SIZE):
+        connection = sqlite3.connect('temp_file_timestamps.db')
+        connection.execute('''CREATE TABLE IF NOT EXISTS files
+                     (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
+        connection_pool.put(connection)
+
+# Function to get a connection from the pool
+def get_connection():
+    with connection_lock:
+        return connection_pool.get()
+
+# Function to return a connection to the pool
+def return_connection(connection):
+    with connection_lock:
+        connection_pool.put(connection)
 
 
 async def fetch_directory_listing(url, session):
@@ -15,13 +43,12 @@ async def fetch_directory_listing(url, session):
             return await response.text()
         except UnicodeDecodeError:
             print(unquote(url))
-            return await response.text(errors='replace')
+        return await response.text(errors='replace')
 
 
 
 async def parse_directory_listing(html_content, base_url):
     soup = BeautifulSoup(html_content, 'html.parser')
-    files = []
     directories = []
     for link in soup.find_all('a'):
         href = link.get('href')
@@ -32,33 +59,22 @@ async def parse_directory_listing(html_content, base_url):
             timestamp_str = link.next_sibling.strip().split()[0:2]
             timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
             timestamp_unix = int(timestamp.timestamp())
-            files.append((filename_utf8, record, timestamp_unix))
+            await save_to_temp_db([(record, filename_utf8, timestamp_unix)])
         elif href != '../':
             directories.append(href)
-    return files, directories
+    return directories
     
 
 async def fetch_and_parse_recursive(url, session):
     #print(f"Fetching and parsing: {url}")
     html_content = await fetch_directory_listing(url, session)
-    files, directories = await parse_directory_listing(html_content, url)
+    directories = await parse_directory_listing(html_content, url)
     subtasks = []
     for directory in directories:
         directory_url = urljoin(url, directory)
         subtasks.append(fetch_and_parse_recursive(directory_url, session))
-    subfiles = await asyncio.gather(*subtasks)
-    for subfile_list in subfiles:
-        files.extend(subfile_list)
-    return files
+    await asyncio.gather(*subtasks)
 
-
-async def download_files(files, media_path, session):
-    download_tasks = []
-    for file_info in files:
-        url = file_info["url"]
-        filename = file_info["filename"]
-        download_tasks.append(asyncio.to_thread(download_file(url, filename, media_path, session)))
-    await asyncio.gather(*download_tasks)
 
 async def download_file(url, filename, media_path, session):
     #print(f"Downloading: {filename}")
@@ -78,14 +94,12 @@ async def download_file(url, filename, media_path, session):
 
 
 async def store_in_database(files, media_path, session, download=True):
-    print("Storing in database...")
     conn = sqlite3.connect('file_timestamps.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS files
                  (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
-    
     download_tasks = []
-    for filename, url, timestamp in files:
+    for url, filename, timestamp in files:
         c.execute('SELECT * FROM files WHERE url = ?', (url,))
         existing_record = c.fetchone()
         if existing_record:
@@ -99,13 +113,64 @@ async def store_in_database(files, media_path, session, download=True):
             c.execute('INSERT INTO files VALUES (?, ?, ?)', (url, filename, timestamp))
     
     try:
-        await asyncio.wait_for(asyncio.gather(*download_tasks), timeout=3600)
+        await asyncio.gather(*download_tasks)
     except asyncio.TimeoutError:
         print("Download tasks timed out.")
     finally:
         conn.commit()
         conn.close()
-        print("Database storage complete.")
+
+
+async def save_to_temp_db(files):
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS files
+                     (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
+        c.executemany('INSERT INTO files VALUES (?, ?, ?)', files)
+        conn.commit()
+    finally:
+        return_connection(conn)
+
+# Function to read a chunk of records from the temporary database
+async def read_from_temp_db(offset, limit):
+    conn = sqlite3.connect('temp_file_timestamps.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM files LIMIT ? OFFSET ?', (limit, offset))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+async def create_session_and_initialize_temp_db(url):
+    session = None
+    temp_db_file = 'temp_file_timestamps.db'
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+        print("Fetching and parsing directory listings...")
+        await fetch_and_parse_recursive(url, session)
+        return session
+
+
+async def process_temp_database(temp_db_file, media_path, args):
+    try:
+        if not args.no_download:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+                temp_conn = sqlite3.connect(temp_db_file)
+                temp_c = temp_conn.cursor()
+                temp_c.execute('SELECT COUNT(*) FROM files')
+                total_records = temp_c.fetchone()[0]
+                chunk_size = 1000  # Adjust the chunk size as needed
+                offset = 0
+                while offset < total_records:
+                    temp_c.execute('SELECT * FROM files LIMIT ? OFFSET ?', (chunk_size, offset))
+                    temp_files = temp_c.fetchall()
+                    await store_in_database(temp_files, media_path, session)
+                    offset += chunk_size
+        else:
+            print("Skipping download.")
+    finally:
+        temp_conn.close()
+        os.remove(temp_db_file)
+
 
 
 async def main():
@@ -116,25 +181,13 @@ async def main():
     parser.add_argument("--no-download", action="store_true", help="Build database without downloading files")
     args = parser.parse_args()
 
-    db_file = 'file_timestamps.db'
-    if not os.path.exists(db_file):
-        conn = sqlite3.connect(db_file)
-        conn.close()
-    
-    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-        url = 'https://emby.xiaoya.pro/'
-        print("Fetching and parsing directory listings...")
-        files = await fetch_and_parse_recursive(url, session)
-        print("Directory listings fetched and parsed.")
-        if not args.no_download:
-            await store_in_database(files, args.media, session)
-        else:
-            await store_in_database(files, args.media, session, False)
+    url = 'https://emby.xiaoya.pro/%E6%AF%8F%E6%97%A5%E6%9B%B4%E6%96%B0/%E5%8A%A8%E6%BC%AB/%E6%97%A5%E6%9C%AC/2010/'
+    temp_db_file = 'temp_file_timestamps.db'
+    initialize_connection_pool()
 
-        print("Files and timestamps stored/updated in the database successfully.")
-
+    await create_session_and_initialize_temp_db(url)
+    await process_temp_database(temp_db_file, args.media, args)
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
