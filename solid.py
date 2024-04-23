@@ -13,15 +13,15 @@ import os
 
 
 # Connection pool parameters
-POOL_SIZE = 5
+POOL_SIZE = 10
 
 # Initialize connection pool
 connection_pool = Queue(maxsize=POOL_SIZE)
 connection_lock = Lock()
 
-def initialize_connection_pool():
+def initialize_connection_pool(temp_db_file):
     for _ in range(POOL_SIZE):
-        connection = sqlite3.connect('temp_file_timestamps.db')
+        connection = sqlite3.connect(temp_db_file)
         connection.execute('''CREATE TABLE IF NOT EXISTS files
                      (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
         connection_pool.put(connection)
@@ -143,7 +143,6 @@ async def read_from_temp_db(offset, limit):
 
 async def create_session_and_initialize_temp_db(url):
     session = None
-    temp_db_file = 'temp_file_timestamps.db'
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         print("Fetching and parsing directory listings...")
         await fetch_and_parse_recursive(url, session)
@@ -181,9 +180,11 @@ async def main():
     parser.add_argument("--no-download", action="store_true", help="Build database without downloading files")
     args = parser.parse_args()
 
+    temp_db_file = os.path.join(current_directory, 'temp_file_timestamps.db')
+
     url = 'https://emby.xiaoya.pro/%E6%AF%8F%E6%97%A5%E6%9B%B4%E6%96%B0/%E5%8A%A8%E6%BC%AB/%E6%97%A5%E6%9C%AC/2010/'
-    temp_db_file = 'temp_file_timestamps.db'
-    initialize_connection_pool()
+    
+    initialize_connection_pool(temp_db_file)
 
     await create_session_and_initialize_temp_db(url)
     await process_temp_database(temp_db_file, args.media, args)
