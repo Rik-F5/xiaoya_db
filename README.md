@@ -8,5 +8,9 @@ source .venv/bin/activate
 
 python -m pip install -r requirements.txt
 
-python solid.py --media <folder>
+python solid.py --media <Media folder>
+
+
+
+ulimit -n 30000
 
