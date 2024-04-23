@@ -175,7 +175,7 @@ async def main():
     temp_db_file = os.path.join(current_directory, 'temp_file_timestamps.db')
     db_file = os.path.join(current_directory, 'file_timestamps.db')
 
-    url = 'https://emby.xiaoya.pro/%E6%AF%8F%E6%97%A5%E6%9B%B4%E6%96%B0/%E5%8A%A8%E6%BC%AB/%E6%97%A5%E6%9C%AC/2010/'
+    url = 'https://emby.xiaoya.pro/'
     
     initialize_connection_pool(temp_db_file)
 
