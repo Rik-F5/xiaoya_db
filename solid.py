@@ -19,9 +19,9 @@ POOL_SIZE = 10
 connection_pool = Queue(maxsize=POOL_SIZE)
 connection_lock = Lock()
 
-def initialize_connection_pool(temp_db_file):
+def initialize_connection_pool(db):
     for _ in range(POOL_SIZE):
-        connection = sqlite3.connect(temp_db_file)
+        connection = sqlite3.connect(db)
         connection.execute('''CREATE TABLE IF NOT EXISTS files
                      (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
         connection_pool.put(connection)
@@ -112,12 +112,13 @@ async def store_in_database(db_file, files, media_path, session, download=True):
                 download_tasks.append(download_file(url, filename, media_path, session))
             c.execute('INSERT INTO files VALUES (?, ?, ?)', (url, filename, timestamp))
     conn.commit()
+    conn.close()
     try:
         await asyncio.gather(*download_tasks)
     except asyncio.TimeoutError:
         print("Download tasks timed out.")
     finally:
-        conn.close()
+        return
 
 
 async def save_to_temp_db(files):
