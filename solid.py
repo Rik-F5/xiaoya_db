@@ -93,8 +93,8 @@ async def download_file(url, filename, media_path, session):
             print(f"Failed to download: {filename} [Response code: {response.status}]")
 
 
-async def store_in_database(files, media_path, session, download=True):
-    conn = sqlite3.connect('file_timestamps.db')
+async def store_in_database(db_file, files, media_path, session, download=True):
+    conn = sqlite3.connect(db_file)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS files
                  (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
@@ -132,14 +132,6 @@ async def save_to_temp_db(files):
     finally:
         return_connection(conn)
 
-# Function to read a chunk of records from the temporary database
-async def read_from_temp_db(offset, limit):
-    conn = sqlite3.connect('temp_file_timestamps.db')
-    c = conn.cursor()
-    c.execute('SELECT * FROM files LIMIT ? OFFSET ?', (limit, offset))
-    rows = c.fetchall()
-    conn.close()
-    return rows
 
 async def create_session_and_initialize_temp_db(url):
     session = None
@@ -149,7 +141,7 @@ async def create_session_and_initialize_temp_db(url):
         return session
 
 
-async def process_temp_database(temp_db_file, media_path, args):
+async def process_temp_database(temp_db_file, db_file, media_path, args):
     try:
         if not args.no_download:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
@@ -162,7 +154,7 @@ async def process_temp_database(temp_db_file, media_path, args):
                 while offset < total_records:
                     temp_c.execute('SELECT * FROM files LIMIT ? OFFSET ?', (chunk_size, offset))
                     temp_files = temp_c.fetchall()
-                    await store_in_database(temp_files, media_path, session)
+                    await store_in_database(db_file, temp_files, media_path, session)
                     offset += chunk_size
         else:
             print("Skipping download.")
@@ -181,13 +173,14 @@ async def main():
     args = parser.parse_args()
 
     temp_db_file = os.path.join(current_directory, 'temp_file_timestamps.db')
+    db_file = os.path.join(current_directory, 'file_timestamps.db')
 
     url = 'https://emby.xiaoya.pro/%E6%AF%8F%E6%97%A5%E6%9B%B4%E6%96%B0/%E5%8A%A8%E6%BC%AB/%E6%97%A5%E6%9C%AC/2010/'
     
     initialize_connection_pool(temp_db_file)
 
     await create_session_and_initialize_temp_db(url)
-    await process_temp_database(temp_db_file, args.media, args)
+    await process_temp_database(temp_db_file, db_file, args.media, args)
 
 
 if __name__ == "__main__":
