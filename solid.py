@@ -111,13 +111,12 @@ async def store_in_database(db_file, files, media_path, session, download=True):
             if download:
                 download_tasks.append(download_file(url, filename, media_path, session))
             c.execute('INSERT INTO files VALUES (?, ?, ?)', (url, filename, timestamp))
-    
+    conn.commit()
     try:
         await asyncio.gather(*download_tasks)
     except asyncio.TimeoutError:
         print("Download tasks timed out.")
     finally:
-        conn.commit()
         conn.close()
 
 
