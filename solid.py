@@ -171,8 +171,8 @@ async def main():
     parser.add_argument("--media", type=str, default=default_media_path, help="Path to store downloaded media files")
     parser.add_argument("--no-download", action="store_true", help="Build database without downloading files")
     args = parser.parse_args()
-
-    temp_db_file = os.path.join(current_directory, 'temp_file_timestamps.db')
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    temp_db_file = os.path.join(current_directory, f'temp_file_timestamps_{timestamp}.db')
     db_file = os.path.join(current_directory, 'file_timestamps.db')
 
     url = 'https://emby.xiaoya.pro/'
