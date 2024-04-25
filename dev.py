@@ -33,8 +33,8 @@ async def fetch_html(url: str, session: ClientSession, **kwargs) -> str:
     """
 
     resp = await session.request(method="GET", url=url, **kwargs)
-    resp.raise_for_status()
-    logger.info("Got response [%s] for URL: %s", resp.status, unquote(url))
+    #resp.raise_for_status()
+    #logger.info("Got response [%s] for URL: %s", resp.status, unquote(url))
     html = await resp.text()
     return html
 
@@ -102,7 +102,7 @@ async def write_one(database: IO, url: str, **kwargs) -> list:
 
 async def bulk_crawl_and_write(database: IO, url: str, **kwargs) -> None:
     """Crawl & write concurrently to `file` for multiple `urls`."""
-    async with ClientSession() as session:
+    async with ClientSession(connector=TCPConnector(ssl=False, limit=10, ttl_dns_cache=600)) as session:
         tasks = []
         directories = await write_one(database=database, url=url, session=session, **kwargs)
         for url in directories:
