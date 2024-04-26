@@ -18,7 +18,7 @@ import aiosqlite
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
-    level=logging.INFO,
+    level=logging.DEBUG,
     datefmt="%H:%M:%S",
     stream=sys.stderr,
 )
