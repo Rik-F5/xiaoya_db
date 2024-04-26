@@ -78,13 +78,13 @@ async def need_download(file, **kwargs):
     url, filename, timestamp, filesize = file
     file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
     if not os.path.exists(file_path):
+        logger.debug("%s doesn't exists", file_path)
         return True 
     else:
-        current_timestamp = os.path.getmtime(file_path)
-        if timestamp > current_timestamp:
-            current_filesize = os.path.getsize(file_path)
-            if filesize == current_filesize:
-                return False
+        current_filesize = os.path.getsize(file_path)
+        if int(filesize) == int(current_filesize):
+            logger.debug("%s: %s", filesize, current_filesize)
+            return False
     return True
 
 async def download(file, session, **kwargs):
@@ -109,7 +109,7 @@ async def download(file, session, **kwargs):
 async def download_files(files, session, **kwargs):
     download_tasks = []
     for file in files:
-        if await need_download(file, **kwargs):
+        if await need_download(file, **kwargs) == True:
             task = asyncio.create_task(download(file, session, **kwargs))
             download_tasks.append(task)
     await asyncio.gather(*download_tasks)
