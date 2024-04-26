@@ -70,7 +70,7 @@ async def parse(url: str, session: ClientSession, **kwargs) -> set:
                 timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
                 timestamp_unix = int(timestamp.timestamp())
                 filesize = link.next_sibling.strip().split()[2]
-                files.append((abslink, filename, timestamp_unix, filesize))
+                files.append((str(abslink), str(filename), int(timestamp_unix), int(filesize)))
             elif href != '../':
                 directories.append(urljoin(url, href))
         return files, directories
