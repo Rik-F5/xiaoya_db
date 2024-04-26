@@ -85,7 +85,9 @@ async def write_one(database, url: str, db, **kwargs) -> list:
 
 async def bulk_crawl_and_write(database, url: str, session, db, **kwargs) -> None:
     if session.closed:
-        session = ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600))
+        logger.info("session is closed")
+        asyncio.sleep(1)
+        session = await ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600))
     if not db:
         db = await aiosqlite.connect(database)
     tasks = []
