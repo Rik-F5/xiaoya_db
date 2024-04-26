@@ -18,7 +18,7 @@ import aiosqlite
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
-    level=logging.DEBUG,
+    level=logging.INFO,
     datefmt="%H:%M:%S",
     stream=sys.stderr,
 )
@@ -80,8 +80,6 @@ async def write_one(database: IO, url: str, db, **kwargs) -> list:
     files, directories = await parse(url=url, **kwargs)
     if not files:
         return directories
-    await db.execute('''CREATE TABLE IF NOT EXISTS files
-                         (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER, filesize INTERGER)''')
     await db.executemany('INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?)', files)
     await db.commit()
     logger.debug("Wrote results for source URL: %s", unquote(url))
@@ -105,6 +103,8 @@ async def main() :
     url = "https://emby.xiaoya.pro/"
     database = "file.db"
     db = await aiosqlite.connect(database)
+    await db.execute('''CREATE TABLE IF NOT EXISTS files
+                         (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER, filesize INTERGER)''')
     semaphore = asyncio.Semaphore(100)
     async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
         await bulk_crawl_and_write(database=database, url=url, session=session, db=db, semaphore=semaphore)
