@@ -7,6 +7,8 @@ import urllib.parse
 from urllib.parse import urljoin, urlparse, unquote
 from bs4 import BeautifulSoup
 from datetime import datetime
+import pathlib
+
 
 import asyncio
 import aiofiles
@@ -23,9 +25,10 @@ logging.basicConfig(
 logger = logging.getLogger("areq")
 logging.getLogger("chardet.charsetprober").disabled = True
 
-async def fetch_html(url: str, session: ClientSession, semaphore, **kwargs) -> str:
+async def fetch_html(url: str, session: ClientSession, **kwargs) -> str:
+    semaphore = kwargs['semaphore']
     async with semaphore:
-        resp = await session.request(method="GET", url=url, **kwargs)
+        resp = await session.request(method="GET", url=url)
         resp.raise_for_status()
         logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
         html = await resp.text()
@@ -84,24 +87,21 @@ async def write_one(database: IO, url: str, db, **kwargs) -> list:
     logger.debug("Wrote results for source URL: %s", unquote(url))
     return directories
 
-async def bulk_crawl_and_write(database: IO, url: str, session, db, **kargs) -> None:
+async def bulk_crawl_and_write(database: IO, url: str, session, db, **kwargs) -> None:
     if not session:
         session = ClientSession(connector=TCPConnector(ssl=False, limit=10, ttl_dns_cache=600))
     if not db:
         db = await aiosqlite.connect(database)
     tasks = []
-    directories = await write_one(database=database, url=url, session=session, db=db, **kargs)
+    directories = await write_one(database=database, url=url, session=session, db=db, **kwargs)
     for url in directories:
-        task = asyncio.create_task(bulk_crawl_and_write(database=database, url=url, session=session, db=db, **kargs))
+        task = asyncio.create_task(bulk_crawl_and_write(database=database, url=url, session=session, db=db, **kwargs))
         tasks.append(task)
     await asyncio.gather(*tasks)
 
 
 async def main() :
-    import pathlib
-    import sys
     assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
-    here = pathlib.Path(__file__).parent
     url = "https://emby.xiaoya.pro/"
     database = "file.db"
     db = await aiosqlite.connect(database)
