@@ -1,7 +1,6 @@
-
+import argparse
 import logging
-import sys
-from typing import IO
+import sys, os
 import urllib.error
 import urllib.parse
 from urllib.parse import urljoin, urlparse, unquote
@@ -76,7 +75,7 @@ async def parse(url: str, session: ClientSession, **kwargs) -> set:
         return files, directories
 
 
-async def write_one(database: IO, url: str, db, **kwargs) -> list:
+async def write_one(database, url: str, db, **kwargs) -> list:
     files, directories = await parse(url=url, **kwargs)
     if not files:
         return directories
@@ -85,7 +84,7 @@ async def write_one(database: IO, url: str, db, **kwargs) -> list:
     logger.debug("Wrote results for source URL: %s", unquote(url))
     return directories
 
-async def bulk_crawl_and_write(database: IO, url: str, session, db, **kwargs) -> None:
+async def bulk_crawl_and_write(database, url: str, session, db, **kwargs) -> None:
     if not session:
         session = ClientSession(connector=TCPConnector(ssl=False, limit=10, ttl_dns_cache=600))
     if not db:
@@ -99,16 +98,23 @@ async def bulk_crawl_and_write(database: IO, url: str, session, db, **kwargs) ->
 
 
 async def main() :
-    assert sys.version_info >= (3, 7), "Script requires Python 3.7+."
-    url = "https://emby.xiaoya.pro/"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--media", type=str, default=os.path.join(os.path.dirname(__file__), "media"), help="Path to store downloaded media files")
+    parser.add_argument("--count", default=100, action="count", help="Max concurrent HTTP Requests")
+    parser.add_argument("--debug", default=False, help="Verbose debug")
+    parser.add_argument("--url", type=str, default="https://emby.xiaoya.pro/", help="Verbose debug")
+    args = parser.parse_args()
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+    url = args.url
     database = "file.db"
-    db = await aiosqlite.connect(database)
-    await db.execute('''CREATE TABLE IF NOT EXISTS files
+    semaphore = asyncio.Semaphore(args.count)
+    async with aiosqlite.connect(database) as db:
+        await db.execute('''CREATE TABLE IF NOT EXISTS files
                          (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER, filesize INTERGER)''')
-    semaphore = asyncio.Semaphore(100)
-    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
-        await bulk_crawl_and_write(database=database, url=url, session=session, db=db, semaphore=semaphore)
-    await db.close()
+        async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
+            await bulk_crawl_and_write(database=database, url=url, session=session, db=db, semaphore=semaphore)
 
 if __name__ == "__main__":
+    assert sys.version_info >= (3, 12), "Script requires Python 3.12+."
     asyncio.run(main())
