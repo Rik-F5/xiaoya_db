@@ -6,8 +6,6 @@ import urllib.parse
 from urllib.parse import urljoin, urlparse, unquote
 from bs4 import BeautifulSoup
 from datetime import datetime
-import pathlib
-
 
 import asyncio
 import aiofiles
@@ -84,6 +82,7 @@ async def write_one(database, url: str, db, **kwargs) -> list:
     logger.debug("Wrote results for source URL: %s", unquote(url))
     return directories
 
+
 async def bulk_crawl_and_write(database, url: str, session, db, **kwargs) -> None:
     if not session:
         session = ClientSession(connector=TCPConnector(ssl=False, limit=10, ttl_dns_cache=600))
@@ -97,10 +96,32 @@ async def bulk_crawl_and_write(database, url: str, session, db, **kwargs) -> Non
     await asyncio.gather(*tasks)
 
 
+async def process_temp_database(temp_db_file, db_file, media_path, args):
+    try:
+        if not args.no_download:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+                temp_conn = sqlite3.connect(temp_db_file)
+                temp_c = temp_conn.cursor()
+                temp_c.execute('SELECT COUNT(*) FROM files')
+                total_records = temp_c.fetchone()[0]
+                chunk_size = 1000  # Adjust the chunk size as needed
+                offset = 0
+                while offset < total_records:
+                    temp_c.execute('SELECT * FROM files LIMIT ? OFFSET ?', (chunk_size, offset))
+                    temp_files = temp_c.fetchall()
+                    await store_in_database(db_file, temp_files, media_path, session)
+                    offset += chunk_size
+        else:
+            print("Skipping download.")
+    finally:
+        temp_conn.close()
+
+
+
 async def main() :
     parser = argparse.ArgumentParser()
     parser.add_argument("--media", type=str, default=os.path.join(os.path.dirname(__file__), "media"), help="Path to store downloaded media files")
-    parser.add_argument("--count", default=100, action="count", help="Max concurrent HTTP Requests")
+    parser.add_argument("--count", type=int, default=100, help="Max concurrent HTTP Requests")
     parser.add_argument("--debug", default=False, help="Verbose debug")
     parser.add_argument("--url", type=str, default="https://emby.xiaoya.pro/", help="Verbose debug")
     args = parser.parse_args()
