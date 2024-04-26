@@ -165,8 +165,8 @@ async def main() :
     async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
         await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=args.media)
     if db_session:
-        db_session.commit()
-        db_session.close()
+        await db_session.commit()
+        await db_session.close()
     
 
 if __name__ == "__main__":
