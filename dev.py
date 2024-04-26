@@ -49,12 +49,12 @@ async def parse(url: str, session: ClientSession, **kwargs) -> set:
             getattr(e, "status", None),
             getattr(e, "message", None),
         )
-        return files, directories
+        return None, None
     except Exception as e:
         logger.exception(
             "Non-aiohttp exception occured:  %s", getattr(e, "__dict__", {})
         )
-        return files, directories
+        return None, None
     else:
         soup = BeautifulSoup(html, 'html.parser')
         for link in soup.find_all('a'):
