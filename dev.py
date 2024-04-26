@@ -84,8 +84,8 @@ async def write_one(database, url: str, db, **kwargs) -> list:
 
 
 async def bulk_crawl_and_write(database, url: str, session, db, **kwargs) -> None:
-    if not session:
-        session = ClientSession(connector=TCPConnector(ssl=False, limit=10, ttl_dns_cache=600))
+    if session.closed:
+        session = ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600))
     if not db:
         db = await aiosqlite.connect(database)
     tasks = []
@@ -137,5 +137,5 @@ async def main() :
             await bulk_crawl_and_write(database=database, url=url, session=session, db=db, semaphore=semaphore)
 
 if __name__ == "__main__":
-    assert sys.version_info >= (3, 12), "Script requires Python 3.12+."
+    assert sys.version_info >= (3, 10), "Script requires Python 3.10+."
     asyncio.run(main())
