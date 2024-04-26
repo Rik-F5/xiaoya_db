@@ -49,12 +49,12 @@ async def parse(url: str, session: ClientSession, **kwargs) -> set:
             getattr(e, "status", None),
             getattr(e, "message", None),
         )
-        return None, None
+        return files, directories
     except Exception as e:
         logger.exception(
             "Non-aiohttp exception occured:  %s", getattr(e, "__dict__", {})
         )
-        return None, None
+        return files, directories
     else:
         soup = BeautifulSoup(html, 'html.parser')
         for link in soup.find_all('a'):
@@ -70,7 +70,7 @@ async def parse(url: str, session: ClientSession, **kwargs) -> set:
                 timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
                 timestamp_unix = int(timestamp.timestamp())
                 filesize = link.next_sibling.strip().split()[2]
-                files.append((str(abslink), str(filename), int(timestamp_unix), int(filesize)))
+                files.append((abslink, filename, timestamp_unix, filesize))
             elif href != '../':
                 directories.append(urljoin(url, href))
         return files, directories
