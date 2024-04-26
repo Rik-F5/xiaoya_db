@@ -24,11 +24,12 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 async def fetch_html(url: str, session: ClientSession, **kwargs) -> str:
     semaphore = kwargs['semaphore']
+    headers = {'connection': 'keep-alive'}
     async with semaphore:
-        resp = await session.request(method="GET", url=url)
-        resp.raise_for_status()       
+        resp = await session.request(method="GET", url=url, headers=headers)
         logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.request_info.headers)
-        logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.headers)
+        resp.raise_for_status()       
+        logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
         logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
         html = await resp.text()
         return html
