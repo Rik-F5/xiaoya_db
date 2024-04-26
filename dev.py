@@ -64,7 +64,7 @@ async def parse(url, session, **kwargs) -> set:
                 except (urllib.error.URLError, ValueError):
                     logger.exception("Error parsing URL: %s", unquote(link))
                 pass
-                filename = unquote((urlparse(abslink).path))
+                filename = unquote(urlparse(abslink).path)
                 timestamp_str = link.next_sibling.strip().split()[0:2]
                 timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
                 timestamp_unix = int(timestamp.timestamp())
@@ -82,9 +82,12 @@ async def need_download(file, **kwargs):
         return True 
     else:
         current_filesize = os.path.getsize(file_path)
-        if int(filesize) == int(current_filesize):
-            logger.debug("%s: %s", filesize, current_filesize)
+        current_timestamp = os.path.getmtime(file_path)
+        logger.debug("%s has timestamp: %s and size: %s", filename, current_timestamp, current_filesize)
+        if int(filesize) == int(current_filesize) and int(timestamp) <= int(current_timestamp):
             return False
+    logger.debug("%s has timestamp: %s and size: %s", filename, timestamp, filesize)
+    logger.debug("%s has current_timestamp: %s and current_size: %s", filename, current_timestamp, current_filesize)
     return True
 
 async def download(file, session, **kwargs):
@@ -155,6 +158,7 @@ async def main() :
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
     if args.db:
+        assert sys.version_info >= (3, 12), "DB function requires Python 3.12+."
         db_session = await aiosqlite.connect(database)
         await db_session.execute('''CREATE TABLE IF NOT EXISTS files
                          (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER, filesize INTERGER)''')
@@ -164,5 +168,5 @@ async def main() :
     
 
 if __name__ == "__main__":
-    assert sys.version_info >= (3, 12), "Script requires Python 3.12+."
+    assert sys.version_info >= (3, 10), "Script requires Python 3.10+."
     asyncio.run(main())
