@@ -80,6 +80,11 @@ async def need_download(file, **kwargs):
     if not os.path.exists(file_path):
         logger.debug("%s doesn't exists", file_path)
         return True 
+    elif file_path.endswith('.nfo'):
+        if not kwargs['nfo']:
+            return False
+        else:
+            pass
     else:
         current_filesize = os.path.getsize(file_path)
         current_timestamp = os.path.getmtime(file_path)
@@ -148,6 +153,7 @@ async def main() :
     parser.add_argument("--count", type=int, default=100, help="Max concurrent HTTP Requests")
     parser.add_argument("--debug", default=False, help="Verbose debug")
     parser.add_argument("--db", default=False, help="Create db")
+    parser.add_argument("--nfo", default=False, help="Download NFO")
     parser.add_argument("--url", type=str, default="https://emby.xiaoya.pro/", help="Verbose debug")
     
     args = parser.parse_args()
@@ -163,7 +169,7 @@ async def main() :
         await db_session.execute('''CREATE TABLE IF NOT EXISTS files
                          (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER, filesize INTERGER)''')
     async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
-        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=args.media)
+        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=args.media, nfo=args.nfo)
     if db_session:
         await db_session.commit()
         await db_session.close()
