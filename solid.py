@@ -1,187 +1,180 @@
 import argparse
-import asyncio
-import aiohttp
-import aiofiles
-from bs4 import BeautifulSoup
-import sqlite3
-from queue import Queue
-from threading import Lock
-from datetime import datetime
+import logging
+import sys, os
+import urllib.error
+import urllib.parse
 from urllib.parse import urljoin, urlparse, unquote
-import os
+from bs4 import BeautifulSoup
+from datetime import datetime
 
+import asyncio
+import aiofiles
+import aiohttp
+from aiohttp import ClientSession, TCPConnector
+import aiosqlite
 
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
+    level=logging.INFO,
+    datefmt="%H:%M:%S",
+    stream=sys.stderr,
+)
+logger = logging.getLogger("areq")
+logging.getLogger("chardet.charsetprober").disabled = True
 
-# Connection pool parameters
-POOL_SIZE = 10
+async def fetch_html(url, session, **kwargs) -> str:
+    semaphore = kwargs['semaphore']
+    async with semaphore:
+        resp = await session.request(method="GET", url=url)
+        logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.request_info.headers)
+        resp.raise_for_status()       
+        logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
+        logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
+        html = await resp.text()
+        return html
 
-# Initialize connection pool
-connection_pool = Queue(maxsize=POOL_SIZE)
-connection_lock = Lock()
-
-def initialize_connection_pool(db):
-    for _ in range(POOL_SIZE):
-        connection = sqlite3.connect(db)
-        connection.execute('''CREATE TABLE IF NOT EXISTS files
-                     (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
-        connection_pool.put(connection)
-
-# Function to get a connection from the pool
-def get_connection():
-    with connection_lock:
-        return connection_pool.get()
-
-# Function to return a connection to the pool
-def return_connection(connection):
-    with connection_lock:
-        connection_pool.put(connection)
-
-
-async def fetch_directory_listing(url, session):
-    async with session.get(url) as response:
-        try:
-            return await response.text()
-        except UnicodeDecodeError:
-            print(unquote(url))
-        return await response.text(errors='replace')
-
-
-
-async def parse_directory_listing(html_content, base_url):
-    soup = BeautifulSoup(html_content, 'html.parser')
+async def parse(url, session, **kwargs) -> set:
+    files = []
     directories = []
-    for link in soup.find_all('a'):
-        href = link.get('href')
-        if href != '../' and not href.endswith('/'):
-            record = urljoin(base_url, href)
-            filename = (urlparse(record).path)
-            filename_utf8 = unquote(filename)
-            timestamp_str = link.next_sibling.strip().split()[0:2]
-            timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
-            timestamp_unix = int(timestamp.timestamp())
-            await save_to_temp_db([(record, filename_utf8, timestamp_unix)])
-        elif href != '../':
-            directories.append(href)
-    return directories
-    
+    try:
+        html = await fetch_html(url=url, session=session, **kwargs)
+    except (
+        aiohttp.ClientError,
+        aiohttp.http_exceptions.HttpProcessingError,
+    ) as e:
+        logger.error(
+            "aiohttp exception for %s [%s]: %s",
+            unquote(url),
+            getattr(e, "status", None),
+            getattr(e, "message", None),
+        )
+        return files, directories
+    except Exception as e:
+        logger.exception(
+            "Non-aiohttp exception occured:  %s", getattr(e, "__dict__", {})
+        )
+        return files, directories
+    else:
+        soup = BeautifulSoup(html, 'html.parser')
+        for link in soup.find_all('a'):
+            href = link.get('href')
+            if href != '../' and not href.endswith('/'):
+                try:
+                    abslink = urljoin(url, href)
+                except (urllib.error.URLError, ValueError):
+                    logger.exception("Error parsing URL: %s", unquote(link))
+                pass
+                filename = unquote(urlparse(abslink).path)
+                timestamp_str = link.next_sibling.strip().split()[0:2]
+                timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
+                timestamp_unix = int(timestamp.timestamp())
+                filesize = link.next_sibling.strip().split()[2]
+                files.append((abslink, filename, timestamp_unix, filesize))
+            elif href != '../':
+                directories.append(urljoin(url, href))
+        return files, directories
 
-async def fetch_and_parse_recursive(url, session):
-    #print(f"Fetching and parsing: {url}")
-    html_content = await fetch_directory_listing(url, session)
-    directories = await parse_directory_listing(html_content, url)
-    subtasks = []
-    for directory in directories:
-        directory_url = urljoin(url, directory)
-        subtasks.append(fetch_and_parse_recursive(directory_url, session))
-    await asyncio.gather(*subtasks)
+async def need_download(file, **kwargs):
+    url, filename, timestamp, filesize = file
+    file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
+    if not os.path.exists(file_path):
+        logger.debug("%s doesn't exists", file_path)
+        return True 
+    elif file_path.endswith('.nfo'):
+        if not kwargs['nfo']:
+            return False
+        else:
+            pass
+    else:
+        current_filesize = os.path.getsize(file_path)
+        current_timestamp = os.path.getmtime(file_path)
+        logger.debug("%s has timestamp: %s and size: %s", filename, current_timestamp, current_filesize)
+        if int(filesize) == int(current_filesize) and int(timestamp) <= int(current_timestamp):
+            return False
+    logger.debug("%s has timestamp: %s and size: %s", filename, timestamp, filesize)
+    logger.debug("%s has current_timestamp: %s and current_size: %s", filename, current_timestamp, current_filesize)
+    return True
 
-
-async def download_file(url, filename, media_path, session):
-    #print(f"Downloading: {filename}")
-    async with session.get(url) as response:
+async def download(file, session, **kwargs):
+    url, filename, timestamp, filesize = file
+    semaphore = kwargs['semaphore']
+    async with semaphore:
+        response = await session.get(url)
         if response.status == 200:
-            file_path = os.path.join(media_path, filename.lstrip('/'))
+            file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
             os.umask(0)
             os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
             async with aiofiles.open(file_path, 'wb') as f:
-                #print("Starting to write file...")
+                logger.debug("Starting to write file: %s", filename)
                 await f.write(await response.content.read())
-                #print("Finished writing file.")
+                logger.debug("Finish to write file: %s", filename)
             os.chmod(file_path, 0o777)
-            print(f"Downloaded: {filename}")
+            logger.info("Downloaded: %s", filename)
         else:
-            print(f"Failed to download: {filename} [Response code: {response.status}]")
+            logger.info("Failed to download: %s [Response code: %s]", filename, response.status)
 
 
-async def store_in_database(db_file, files, media_path, session, download=True):
-    conn = sqlite3.connect(db_file)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS files
-                 (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
+async def download_files(files, session, **kwargs):
     download_tasks = []
-    for url, filename, timestamp in files:
-        c.execute('SELECT * FROM files WHERE url = ?', (url,))
-        existing_record = c.fetchone()
-        if existing_record:
-            if timestamp > existing_record[2] or os.path.exists(os.path.join(media_path, filename.lstrip('/'))) == False:
-                if download:
-                    download_tasks.append(download_file(url, filename, media_path, session))
-                c.execute('UPDATE files SET filename = ?, timestamp = ? WHERE url = ?', (filename, timestamp, url))
-        else:
-            if download:
-                download_tasks.append(download_file(url, filename, media_path, session))
-            c.execute('INSERT INTO files VALUES (?, ?, ?)', (url, filename, timestamp))
-    conn.commit()
-    conn.close()
-    try:
-        await asyncio.gather(*download_tasks)
-    except asyncio.TimeoutError:
-        print("Download tasks timed out.")
-    finally:
-        return
+    for file in files:
+        if await need_download(file, **kwargs) == True:
+            task = asyncio.create_task(download(file, session, **kwargs))
+            download_tasks.append(task)
+    await asyncio.gather(*download_tasks)
 
-
-async def save_to_temp_db(files):
-    conn = get_connection()
-    try:
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS files
-                     (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER)''')
-        c.executemany('INSERT INTO files VALUES (?, ?, ?)', files)
-        conn.commit()
-    finally:
-        return_connection(conn)
-
-
-async def create_session_and_initialize_temp_db(url):
-    session = None
-    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-        print("Fetching and parsing directory listings...")
-        await fetch_and_parse_recursive(url, session)
-        return session
-
-
-async def process_temp_database(temp_db_file, db_file, media_path, args):
-    try:
-        if not args.no_download:
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-                temp_conn = sqlite3.connect(temp_db_file)
-                temp_c = temp_conn.cursor()
-                temp_c.execute('SELECT COUNT(*) FROM files')
-                total_records = temp_c.fetchone()[0]
-                chunk_size = 1000  # Adjust the chunk size as needed
-                offset = 0
-                while offset < total_records:
-                    temp_c.execute('SELECT * FROM files LIMIT ? OFFSET ?', (chunk_size, offset))
-                    temp_files = temp_c.fetchall()
-                    await store_in_database(db_file, temp_files, media_path, session)
-                    offset += chunk_size
-        else:
-            print("Skipping download.")
-    finally:
-        temp_conn.close()
-        os.remove(temp_db_file)
-
-
-
-async def main():
-    parser = argparse.ArgumentParser()
-    current_directory = os.path.dirname(__file__)
-    default_media_path = os.path.join(current_directory, "media")
-    parser.add_argument("--media", type=str, default=default_media_path, help="Path to store downloaded media files")
-    parser.add_argument("--no-download", action="store_true", help="Build database without downloading files")
-    args = parser.parse_args()
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    temp_db_file = os.path.join(current_directory, f'temp_file_timestamps_{timestamp}.db')
-    db_file = os.path.join(current_directory, 'file_timestamps.db')
-
-    url = 'https://emby.xiaoya.pro/'
     
-    initialize_connection_pool(temp_db_file)
 
-    await create_session_and_initialize_temp_db(url)
-    await process_temp_database(temp_db_file, db_file, args.media, args)
 
+async def write_one(url, session, db_session, **kwargs) -> list:
+    files, directories = await parse(url=url, session=session, **kwargs)
+    if not files:
+        return directories
+    if db_session:
+        await db_session.executemany('INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?)', files)
+        await db_session.commit()
+        logger.debug("Wrote results for source URL: %s", unquote(url))
+    if kwargs['media']:
+        await download_files(files=files, session=session, **kwargs)
+    return directories
+
+
+async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
+    tasks = []
+    directories = await write_one(url=url, session=session, db_session=db_session, **kwargs)
+    for url in directories:
+        task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
+        tasks.append(task)
+    await asyncio.gather(*tasks)
+
+
+async def main() :
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--media", metavar="<folder>", type=str, default=None, help="Path to store downloaded media files [Default: %(default)s]")
+    parser.add_argument("--count", metavar="[number]", type=int, default=100, help="Max concurrent HTTP Requests [Default: %(default)s]")
+    parser.add_argument("--debug", metavar="[True|False]", type=bool, default=False, help="Verbose debug [Default: %(default)s]")
+    parser.add_argument("--db", metavar="[True|False]", type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
+    parser.add_argument("--nfo", metavar="[True|False]", type=bool, default=False, help="Download NFO [Default: %(default)s]")
+    parser.add_argument("--url", metavar="[url]", type=str, default="https://emby.xiaoya.pro/", help="Download path [Default: %(default)s]")
+    
+    args = parser.parse_args()
+    if args.debug:
+        logging.getLogger("areq").setLevel(logging.DEBUG)
+    url = args.url
+    database = "file.db"
+    semaphore = asyncio.Semaphore(args.count)
+    db_session = None
+    if args.db:
+        assert sys.version_info >= (3, 12), "DB function requires Python 3.12+."
+        db_session = await aiosqlite.connect(database)
+        await db_session.execute('''CREATE TABLE IF NOT EXISTS files
+                         (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER, filesize INTERGER)''')
+    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
+        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=args.media, nfo=args.nfo)
+    if db_session:
+        await db_session.commit()
+        await db_session.close()
+    
 
 if __name__ == "__main__":
+    assert sys.version_info >= (3, 10), "Script requires Python 3.10+."
     asyncio.run(main())
