@@ -4,3 +4,4 @@ media/*
 *.sql
 .venv
 .DS*
+*.list

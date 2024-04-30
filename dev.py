@@ -3,9 +3,11 @@ import logging
 import sys, os
 import urllib.error
 import urllib.parse
-from urllib.parse import urljoin, urlparse, unquote
+import urllib.request
+from urllib.parse import urljoin, urlparse, unquote, quote
 from bs4 import BeautifulSoup
 from datetime import datetime
+import random
 
 import asyncio
 import aiofiles
@@ -21,6 +23,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger("areq")
 logging.getLogger("chardet.charsetprober").disabled = True
+
+
+s_paths = [
+    quote('每日更新/'),
+    quote('电影/'),
+    quote('纪录片（已刮削）/'),
+    quote('音乐/')
+]
+
+s_pool = [
+    "https://emby.xiaoya.pro/",
+    "http://icyou.eu.org/"
+]
+
+# CF blocks urllib...
+
+custom_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
+opener = urllib.request.build_opener()
+opener.addheaders = [('User-Agent', custom_user_agent)]
+urllib.request.install_opener(opener)
+
+
+def pick_a_pool_member(url_list):
+    random.shuffle(url_list)
+    for member in url_list:
+        try:
+            logger.debug("Testing: %s", member)
+            response = urllib.request.urlopen(member)
+            if response.getcode() == 200:
+                logger.debug("Picked: %s", member)
+                return member
+        except Exception as e:
+            logger.info("Error accessing %s: %s", member, e)
+            pass
+    return None
+
 
 async def fetch_html(url, session, **kwargs) -> str:
     semaphore = kwargs['semaphore']
@@ -58,7 +96,7 @@ async def parse(url, session, **kwargs) -> set:
         soup = BeautifulSoup(html, 'html.parser')
         for link in soup.find_all('a'):
             href = link.get('href')
-            if href != '../' and not href.endswith('/'):
+            if href != '../' and not href.endswith('/') and href != 'scan.list':
                 try:
                     abslink = urljoin(url, href)
                 except (urllib.error.URLError, ValueError):
@@ -126,6 +164,12 @@ async def download_files(files, session, **kwargs):
 
 
 async def write_one(url, session, db_session, **kwargs) -> list:
+    # This is a hack.. To be compatible with the website with the full data rather than updating ones.
+    if urlparse(url).path == '/':
+        directories = []
+        for path in s_paths:
+            directories.append(urljoin(url, path))
+        return directories
     files, directories = await parse(url=url, session=session, **kwargs)
     if not files:
         return directories
@@ -149,17 +193,23 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
 
 async def main() :
     parser = argparse.ArgumentParser()
-    parser.add_argument("--media", type=str, default=None, help="Path to store downloaded media files")
-    parser.add_argument("--count", type=int, default=100, help="Max concurrent HTTP Requests")
-    parser.add_argument("--debug", default=False, help="Verbose debug")
-    parser.add_argument("--db", default=False, help="Create db")
-    parser.add_argument("--nfo", default=False, help="Download NFO")
-    parser.add_argument("--url", type=str, default="https://emby.xiaoya.pro/", help="Verbose debug")
+    parser.add_argument("--media", metavar="<folder>", type=str, default=None, help="Path to store downloaded media files [Default: %(default)s]")
+    parser.add_argument("--count", metavar="[number]", type=int, default=100, help="Max concurrent HTTP Requests [Default: %(default)s]")
+    parser.add_argument("--debug", metavar="[True|False]", type=bool, default=True, help="Verbose debug [Default: %(default)s]")
+    parser.add_argument("--db", metavar="[True|False]", type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
+    parser.add_argument("--nfo", metavar="[True|False]", type=bool, default=False, help="Download NFO [Default: %(default)s]")
+    parser.add_argument("--url", metavar="[url]", type=str, default=None, help="Download path [Default: %(default)s]")
     
     args = parser.parse_args()
     if args.debug:
         logging.getLogger("areq").setLevel(logging.DEBUG)
-    url = args.url
+    if not args.url:
+        url = pick_a_pool_member(s_pool)
+    else:
+        url = args.url
+    if not url:
+        logger.info("No servers are reachable, please check your Internet connection...")
+        exit()
     database = "file.db"
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
