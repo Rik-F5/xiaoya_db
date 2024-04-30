@@ -27,14 +27,15 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 s_paths = [
     quote('每日更新/'),
-    quote('电影/'),
+    quote('电影/2023/'),
     quote('纪录片（已刮削）/'),
     quote('音乐/')
 ]
 
 s_pool = [
     "https://emby.xiaoya.pro/",
-    "http://icyou.eu.org/"
+    "http://icyou.eu.org/",
+    "https://lanyuewan.cn/"
 ]
 
 # CF blocks urllib...
@@ -52,7 +53,7 @@ def pick_a_pool_member(url_list):
             logger.debug("Testing: %s", member)
             response = urllib.request.urlopen(member)
             if response.getcode() == 200:
-                logger.debug("Picked: %s", member)
+                logger.info("Picked: %s", member)
                 return member
         except Exception as e:
             logger.info("Error accessing %s: %s", member, e)
@@ -195,13 +196,13 @@ async def main() :
     parser = argparse.ArgumentParser()
     parser.add_argument("--media", metavar="<folder>", type=str, default=None, help="Path to store downloaded media files [Default: %(default)s]")
     parser.add_argument("--count", metavar="[number]", type=int, default=100, help="Max concurrent HTTP Requests [Default: %(default)s]")
-    parser.add_argument("--debug", metavar="[True|False]", type=bool, default=True, help="Verbose debug [Default: %(default)s]")
-    parser.add_argument("--db", metavar="[True|False]", type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
-    parser.add_argument("--nfo", metavar="[True|False]", type=bool, default=False, help="Download NFO [Default: %(default)s]")
+    parser.add_argument("--debug", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Verbose debug [Default: %(default)s]")
+    parser.add_argument("--db", action=argparse.BooleanOptionalAction, type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
+    parser.add_argument("--nfo", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download NFO [Default: %(default)s]")
     parser.add_argument("--url", metavar="[url]", type=str, default=None, help="Download path [Default: %(default)s]")
     
     args = parser.parse_args()
-    if args.debug:
+    if args.debug == True:
         logging.getLogger("areq").setLevel(logging.DEBUG)
     if not args.url:
         url = pick_a_pool_member(s_pool)

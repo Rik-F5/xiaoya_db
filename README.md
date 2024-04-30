@@ -78,18 +78,17 @@ python solid.py
 ## Parameters
 
 ```bash
--h, --help            show this help message and exit
+-h, --help           show this help message and exit
 
---media <folder>      Path to store downloaded media files [Default: None]
+--media <folder>     Path to store downloaded media files [Default: None]
 
---count [number]      Max concurrent HTTP Requests [Default: 100]
+--count [number]     Max concurrent HTTP Requests [Default: 100]
 
---debug [True|False]  Verbose debug [Default: False]
+--debug, --no-debug  Verbose debug [Default: False]
 
---db [True|False]     <Python3.12+ required> Save into DB [Default: False]
+--db, --no-db        <Python3.12+ required> Save into DB [Default: False]
 
---nfo [True|False]    Download NFO [Default: False]
+--nfo, --no-nfo      Download NFO [Default: False]
 
---url [url]           Download path [Default: https://emby.xiaoya.pro/]
-```
----
+--url [url]          Download path [Default: None]
+···
