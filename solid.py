@@ -180,8 +180,8 @@ async def exam_file(file, media):
     stat = await aio_os.stat(file)
     return file[len(media):], int(stat.st_mtime), stat.st_size
 
-async def process_folder(conn, media):
-    for root, _, files in os.walk(media):
+async def process_folder(conn, folder, media):
+    for root, _, files in os.walk(folder):
         for file in files:
             items = []
             if not file.startswith('.'):
@@ -191,7 +191,9 @@ async def process_folder(conn, media):
 async def generate_localdb(db, media):
     async with aiosqlite.connect(db) as conn:
         await create_table(conn)
-        await process_folder(conn, media)
+        for path in s_paths:
+            logger.info("Processing %s", unquote(os.path.join(media, path)))
+            await process_folder(conn, unquote(os.path.join(media, path)), media)
         await conn.close()
 
 async def write_one(url, session, db_session, **kwargs) -> list:
