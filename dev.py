@@ -14,7 +14,6 @@ import aiofiles
 import aiohttp
 from aiohttp import ClientSession, TCPConnector
 import aiosqlite
-import aiofiles.os as aio_os
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
@@ -162,37 +161,8 @@ async def download_files(files, session, **kwargs):
             download_tasks.append(task)
     await asyncio.gather(*download_tasks)
 
+    
 
-async def create_table(conn):
-    async with conn.execute('''
-        CREATE TABLE IF NOT EXISTS files (
-            filename TEXT,
-            timestamp INTEGER,
-            filesize INTEGER)
-    '''):
-        pass
-
-async def insert_files(conn, items):
-    await conn.executemany('INSERT OR REPLACE INTO files VALUES (?, ?, ?)', items)
-    await conn.commit()
-
-async def exam_file(file, media):
-    stat = await aio_os.stat(file)
-    return file[len(media):], int(stat.st_mtime), stat.st_size
-
-async def process_folder(conn, media):
-    for root, _, files in os.walk(media):
-        for file in files:
-            items = []
-            if not file.startswith('.'):
-                items.append(await exam_file(os.path.join(root, file), media))
-                await insert_files(conn, items)
-
-async def generate_localdb(db, media):
-    async with aiosqlite.connect(db) as conn:
-        await create_table(conn)
-        await process_folder(conn, media)
-        await conn.close()
 
 async def write_one(url, session, db_session, **kwargs) -> list:
     # This is a hack.. To be compatible with the website with the full data rather than updating ones.
@@ -204,15 +174,12 @@ async def write_one(url, session, db_session, **kwargs) -> list:
     files, directories = await parse(url=url, session=session, **kwargs)
     if not files:
         return directories
-    if kwargs['media']:
-        await download_files(files=files, session=session, **kwargs)
     if db_session:
-        items = []
-        for file in files:
-            items.append(file[1:])
-        await db_session.executemany('INSERT OR REPLACE INTO files VALUES (?, ?, ?)', items)
+        await db_session.executemany('INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?)', files)
         await db_session.commit()
         logger.debug("Wrote results for source URL: %s", unquote(url))
+    if kwargs['media']:
+        await download_files(files=files, session=session, **kwargs)
     return directories
 
 
@@ -225,28 +192,6 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
     await asyncio.gather(*tasks)
 
 
-async def compare_databases(localdb, tempdb):
-    async with aiosqlite.connect(localdb) as conn1, aiosqlite.connect(tempdb) as conn2:
-        cursor1 = await conn1.cursor()
-        cursor2 = await conn2.cursor()
-
-        await cursor1.execute("SELECT filename FROM files")
-        local_filenames = set(filename[0] for filename in await cursor1.fetchall())
-
-        await cursor2.execute("SELECT filename FROM files")
-        temp_filenames = set(filename[0] for filename in await cursor2.fetchall())
-
-        diff_filenames = local_filenames - temp_filenames
-
-        return diff_filenames
-
-    
-async def purge_removed_files(localdb, tempdb, media):
-    for file in await compare_databases(localdb, tempdb):
-        logger.info("Purged %s", file)
-        os.remove(media + file)
-
-
 async def main() :
     parser = argparse.ArgumentParser()
     parser.add_argument("--media", metavar="<folder>", type=str, default=None, help="Path to store downloaded media files [Default: %(default)s]")
@@ -255,44 +200,30 @@ async def main() :
     parser.add_argument("--db", action=argparse.BooleanOptionalAction, type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
     parser.add_argument("--nfo", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download NFO [Default: %(default)s]")
     parser.add_argument("--url", metavar="[url]", type=str, default=None, help="Download path [Default: %(default)s]")
-    parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Purge removed files [Default: %(default)s]")
-
-
+    
     args = parser.parse_args()
-    media = args.media.rstrip('/')
     if args.debug == True:
         logging.getLogger("areq").setLevel(logging.DEBUG)
     if not args.url:
         url = pick_a_pool_member(s_pool)
     else:
         url = args.url
-        if urlparse(url).path != '/':
-            args.db = False
-            args.purge = False
-            logger.info("db or purge only support in root path mode")
     if not url:
         logger.info("No servers are reachable, please check your Internet connection...")
         exit()
+    database = "file.db"
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
-    if args.db or args.purge:
+    if args.db:
         assert sys.version_info >= (3, 12), "DB function requires Python 3.12+."
-        localdb = os.path.join(media, ".localfiles.db")
-        tempdb = os.path.join(media, ".tempfiles.db")
-        if not os.path.exists(localdb):
-            await generate_localdb(localdb, media)
-        db_session = await aiosqlite.connect(tempdb)
-        await create_table(db_session)
+        db_session = await aiosqlite.connect(database)
+        await db_session.execute('''CREATE TABLE IF NOT EXISTS files
+                         (url TEXT PRIMARY KEY, filename TEXT, timestamp INTEGER, filesize INTERGER)''')
     async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
-        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo)
+        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=args.media, nfo=args.nfo)
     if db_session:
         await db_session.commit()
         await db_session.close()
-    if args.purge:
-        await purge_removed_files(localdb, tempdb, media)
-        os.remove(tempdb)
-    if args.db or args.purge:
-        os.remove(localdb)
     
 
 if __name__ == "__main__":

@@ -91,6 +91,4 @@ python solid.py
 --nfo, --no-nfo      Download NFO [Default: False]
 
 --url [url]          Download path [Default: None]
-
---purge, --no-purge  Purge removed files [Default: False]
 ···
