@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse, unquote, quote
 from bs4 import BeautifulSoup
 from datetime import datetime
 import random
+import re
 
 import asyncio
 import aiofiles
@@ -61,6 +62,24 @@ def pick_a_pool_member(url_list):
             pass
     return None
 
+def current_amount(url):
+    try:
+        with urllib.request.urlopen(url) as response:
+            pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \/(.*)$'
+            hidden_pattern = r'^.*?\/\..*$'
+            matching_lines = 0
+            for line in response:
+                line = line.decode().strip()
+                match = re.match(pattern, line)
+                if match:
+                    file = match.group(1)
+                    if any(file.startswith(unquote(path)) for path in s_paths):
+                        if not re.match(hidden_pattern, file):
+                            matching_lines += 1
+            return matching_lines
+    except urllib.error.URLError as e:
+        print("Error:", e)
+        return -1
 
 async def fetch_html(url, session, **kwargs) -> str:
     semaphore = kwargs['semaphore']
@@ -227,7 +246,7 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
     await asyncio.gather(*tasks)
 
 
-async def compare_databases(localdb, tempdb):
+async def compare_databases(localdb, tempdb, total_amount):
     async with aiosqlite.connect(localdb) as conn1, aiosqlite.connect(tempdb) as conn2:
         cursor1 = await conn1.cursor()
         cursor2 = await conn2.cursor()
@@ -237,14 +256,20 @@ async def compare_databases(localdb, tempdb):
 
         await cursor2.execute("SELECT filename FROM files")
         temp_filenames = set(filename[0] for filename in await cursor2.fetchall())
+        gap = abs(len(temp_filenames) - total_amount)
 
-        diff_filenames = local_filenames - temp_filenames
-
-        return diff_filenames
+        if gap < 10 :
+            if not gap == 0: 
+                logger.warning("Total amount do not match: %d -> %d. But the gap %d is less than 10, purging anyway...", total_amount, len(temp_filenames), abs(len(temp_filenames) - total_amount))
+            diff_filenames = local_filenames - temp_filenames
+            return diff_filenames
+        else:
+            logger.error("Total amount do not match: %d -> %d. Purges are skipped", total_amount, len(temp_filenames))
+            return []
 
     
-async def purge_removed_files(localdb, tempdb, media):
-    for file in await compare_databases(localdb, tempdb):
+async def purge_removed_files(localdb, tempdb, media, total_amount):
+    for file in await compare_databases(localdb, tempdb, total_amount):
         logger.info("Purged %s", file)
         os.remove(media + file)
 
@@ -266,10 +291,12 @@ async def main() :
         logging.getLogger("areq").setLevel(logging.DEBUG)
     if not args.url:
         url = pick_a_pool_member(s_pool)
+        total_amount = current_amount(url + '.scan.list')
+        logger.info("There are %d files in %s", total_amount, url)
     else:
         url = args.url
     if urlparse(url).path != '/' and (args.purge or args.db):
-        logger.error("--db or --purge only support in root path mode")
+        logger.warning("--db or --purge only support in root path mode")
         exit()
     if not url:
         logger.info("No servers are reachable, please check your Internet connection...")
@@ -290,10 +317,9 @@ async def main() :
         await db_session.commit()
         await db_session.close()
     if args.purge:
-        await purge_removed_files(localdb, tempdb, media)
-        os.remove(tempdb)
-    if args.db or args.purge:
+        await purge_removed_files(localdb, tempdb, media, total_amount)
         os.remove(localdb)
+        os.rename(tempdb, localdb)
     
 
 if __name__ == "__main__":
