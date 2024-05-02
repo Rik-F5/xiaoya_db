@@ -40,6 +40,12 @@ s_pool = [
     "https://lanyuewan.cn/"
 ]
 
+s_ext = [
+    ".ass",
+    ".srt",
+    ".ssa"
+]
+
 # CF blocks urllib...
 
 custom_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
@@ -203,7 +209,7 @@ async def process_folder(conn, folder, media):
     for root, _, files in os.walk(folder):
         for file in files:
             items = []
-            if not file.startswith('.'):
+            if not file.startswith('.') and not file.lower().endswith(tuple(s_ext)):
                 items.append(await exam_file(os.path.join(root, file), media))
                 await insert_files(conn, items)
 
