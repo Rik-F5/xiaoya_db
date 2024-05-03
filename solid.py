@@ -75,7 +75,10 @@ def current_amount(url):
             hidden_pattern = r'^.*?\/\..*$'
             matching_lines = 0
             for line in response:
-                line = line.decode().strip()
+                try:
+                    line = line.decode(encoding='utf-8').strip()
+                except:
+                    logger.error("Error decoding line: %s", line)
                 match = re.match(pattern, line)
                 if match:
                     file = match.group(1)
