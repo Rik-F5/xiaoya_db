@@ -8,6 +8,8 @@
 
 ## Prerequisite
 
+Python 3.12+
+
 Linux kernal "Max open files" need to be extended
 
 Save it into /etc/profile.d/ to make it global avaiable after reboot
@@ -86,11 +88,11 @@ python solid.py
 
 --debug, --no-debug  Verbose debug [Default: False]
 
---db, --no-db        <Python3.12+ required> Save into DB [Default: False]
+--db, --no-db        Force to regenerate local DB [Default: False]
 
 --nfo, --no-nfo      Download NFO [Default: False]
 
 --url [url]          Download path [Default: None]
 
---purge, --no-purge  Purge removed files [Default: False]
+--purge, --no-purge  Purge removed files [Default: True]
 ···

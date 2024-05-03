@@ -288,7 +288,7 @@ async def main() :
     parser.add_argument("--db", action=argparse.BooleanOptionalAction, type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
     parser.add_argument("--nfo", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download NFO [Default: %(default)s]")
     parser.add_argument("--url", metavar="[url]", type=str, default=None, help="Download path [Default: %(default)s]")
-    parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Purge removed files [Default: %(default)s]")
+    parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=True, help="Purge removed files [Default: %(default)s]")
 
 
     args = parser.parse_args()
@@ -314,6 +314,9 @@ async def main() :
         localdb = os.path.join(media, ".localfiles.db")
         tempdb = os.path.join(media, ".tempfiles.db")
         if not os.path.exists(localdb):
+            await generate_localdb(localdb, media)
+        elif args.db:
+            os.remove(localdb)
             await generate_localdb(localdb, media)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
