@@ -300,8 +300,6 @@ async def main() :
         logging.getLogger("areq").setLevel(logging.DEBUG)
     if not args.url:
         url = pick_a_pool_member(s_pool)
-        total_amount = current_amount(url + '.scan.list')
-        logger.info("There are %d files in %s", total_amount, url)
     else:
         url = args.url
     if urlparse(url).path != '/' and (args.purge or args.db):
@@ -310,6 +308,9 @@ async def main() :
     if not url:
         logger.info("No servers are reachable, please check your Internet connection...")
         exit()
+    if urlparse(url).path == '/':
+        total_amount = current_amount(url + '.scan.list')
+        logger.info("There are %d files in %s", total_amount, url)
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
     if args.db or args.purge:
