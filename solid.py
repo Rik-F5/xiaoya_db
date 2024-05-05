@@ -77,14 +77,14 @@ def current_amount(url):
             for line in response:
                 try:
                     line = line.decode(encoding='utf-8').strip()
+                    match = re.match(pattern, line)
+                    if match:
+                        file = match.group(1)
+                        if any(file.startswith(unquote(path)) for path in s_paths):
+                            if not re.match(hidden_pattern, file):
+                                matching_lines += 1
                 except:
                     logger.error("Error decoding line: %s", line)
-                match = re.match(pattern, line)
-                if match:
-                    file = match.group(1)
-                    if any(file.startswith(unquote(path)) for path in s_paths):
-                        if not re.match(hidden_pattern, file):
-                            matching_lines += 1
             return matching_lines
     except urllib.error.URLError as e:
         print("Error:", e)
