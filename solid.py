@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import random
 import re
+import gzip
 
 import asyncio
 import aiofiles
@@ -36,7 +37,7 @@ s_paths = [
 
 s_pool = [
     "https://emby.xiaoya.pro/",
-    "http://icyou.eu.org/",
+    "https://icyou.eu.org/",
     "https://lanyuewan.cn/"
 ]
 
@@ -68,9 +69,11 @@ def pick_a_pool_member(url_list):
             pass
     return None
 
-def current_amount(url):
+def current_amount(url, media):
+    listfile = os.path.join(media, ".scan.list.gz")
     try:
-        with urllib.request.urlopen(url) as response:
+        res = urllib.request.urlretrieve(url, listfile)
+        with gzip.open(listfile) as response:
             pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \/(.*)$'
             hidden_pattern = r'^.*?\/\..*$'
             matching_lines = 0
@@ -283,9 +286,17 @@ async def purge_removed_files(localdb, tempdb, media, total_amount):
         os.remove(media + file)
 
 
+def test_media_folder(media):
+    paths = [os.path.join(media, unquote(path)) for path in s_paths]
+    if all(os.path.exists(os.path.abspath(path)) for path in paths):
+        return True
+    else:
+        return False
+
+
 async def main() :
     parser = argparse.ArgumentParser()
-    parser.add_argument("--media", metavar="<folder>", type=str, default=None, help="Path to store downloaded media files [Default: %(default)s]")
+    parser.add_argument("--media", metavar="<folder>", type=str, default=None, required=True, help="Path to store downloaded media files [Default: %(default)s]")
     parser.add_argument("--count", metavar="[number]", type=int, default=100, help="Max concurrent HTTP Requests [Default: %(default)s]")
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Verbose debug [Default: %(default)s]")
     parser.add_argument("--db", action=argparse.BooleanOptionalAction, type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
@@ -295,7 +306,12 @@ async def main() :
 
 
     args = parser.parse_args()
-    media = args.media.rstrip('/')
+    if args.media:
+        if not test_media_folder(args.media):
+            logging.error("The %s doesn't contain the desired folders, please correct the --media parameter", args.media)
+            exit()
+        else:
+            media = args.media.rstrip('/')
     if args.debug == True:
         logging.getLogger("areq").setLevel(logging.DEBUG)
     if not args.url:
@@ -309,7 +325,7 @@ async def main() :
         logger.info("No servers are reachable, please check your Internet connection...")
         exit()
     if urlparse(url).path == '/':
-        total_amount = current_amount(url + '.scan.list')
+        total_amount = current_amount(url + '.scan.list.gz', media)
         logger.info("There are %d files in %s", total_amount, url)
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
