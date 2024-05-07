@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlparse, unquote, quote
 from bs4 import BeautifulSoup
 from datetime import datetime
 import random
+import re
+import gzip
 
 import asyncio
 import aiofiles
@@ -35,8 +37,14 @@ s_paths = [
 
 s_pool = [
     "https://emby.xiaoya.pro/",
-    "http://icyou.eu.org/",
+    "https://icyou.eu.org/",
     "https://lanyuewan.cn/"
+]
+
+s_ext = [
+    ".ass",
+    ".srt",
+    ".ssa"
 ]
 
 # CF blocks urllib...
@@ -61,6 +69,29 @@ def pick_a_pool_member(url_list):
             pass
     return None
 
+def current_amount(url, media):
+    listfile = os.path.join(media, ".scan.list.gz")
+    try:
+        res = urllib.request.urlretrieve(url, listfile)
+        with gzip.open(listfile) as response:
+            pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \/(.*)$'
+            hidden_pattern = r'^.*?\/\..*$'
+            matching_lines = 0
+            for line in response:
+                try:
+                    line = line.decode(encoding='utf-8').strip()
+                    match = re.match(pattern, line)
+                    if match:
+                        file = match.group(1)
+                        if any(file.startswith(unquote(path)) for path in s_paths):
+                            if not re.match(hidden_pattern, file):
+                                matching_lines += 1
+                except:
+                    logger.error("Error decoding line: %s", line)
+            return matching_lines
+    except urllib.error.URLError as e:
+        print("Error:", e)
+        return -1
 
 async def fetch_html(url, session, **kwargs) -> str:
     semaphore = kwargs['semaphore']
@@ -180,18 +211,20 @@ async def exam_file(file, media):
     stat = await aio_os.stat(file)
     return file[len(media):], int(stat.st_mtime), stat.st_size
 
-async def process_folder(conn, media):
-    for root, _, files in os.walk(media):
+async def process_folder(conn, folder, media):
+    for root, _, files in os.walk(folder):
         for file in files:
             items = []
-            if not file.startswith('.'):
+            if not file.startswith('.') and not file.lower().endswith(tuple(s_ext)):
                 items.append(await exam_file(os.path.join(root, file), media))
                 await insert_files(conn, items)
 
 async def generate_localdb(db, media):
     async with aiosqlite.connect(db) as conn:
         await create_table(conn)
-        await process_folder(conn, media)
+        for path in s_paths:
+            logger.info("Processing %s", unquote(os.path.join(media, path)))
+            await process_folder(conn, unquote(os.path.join(media, path)), media)
         await conn.close()
 
 async def write_one(url, session, db_session, **kwargs) -> list:
@@ -225,7 +258,7 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
     await asyncio.gather(*tasks)
 
 
-async def compare_databases(localdb, tempdb):
+async def compare_databases(localdb, tempdb, total_amount):
     async with aiosqlite.connect(localdb) as conn1, aiosqlite.connect(tempdb) as conn2:
         cursor1 = await conn1.cursor()
         cursor2 = await conn2.cursor()
@@ -235,44 +268,65 @@ async def compare_databases(localdb, tempdb):
 
         await cursor2.execute("SELECT filename FROM files")
         temp_filenames = set(filename[0] for filename in await cursor2.fetchall())
+        gap = abs(len(temp_filenames) - total_amount)
 
-        diff_filenames = local_filenames - temp_filenames
-
-        return diff_filenames
+        if gap < 10 :
+            if not gap == 0: 
+                logger.warning("Total amount do not match: %d -> %d. But the gap %d is less than 10, purging anyway...", total_amount, len(temp_filenames), abs(len(temp_filenames) - total_amount))
+            diff_filenames = local_filenames - temp_filenames
+            return diff_filenames
+        else:
+            logger.error("Total amount do not match: %d -> %d. Purges are skipped", total_amount, len(temp_filenames))
+            return []
 
     
-async def purge_removed_files(localdb, tempdb, media):
-    for file in await compare_databases(localdb, tempdb):
+async def purge_removed_files(localdb, tempdb, media, total_amount):
+    for file in await compare_databases(localdb, tempdb, total_amount):
         logger.info("Purged %s", file)
         os.remove(media + file)
 
 
+def test_media_folder(media):
+    paths = [os.path.join(media, unquote(path)) for path in s_paths]
+    if all(os.path.exists(os.path.abspath(path)) for path in paths):
+        return True
+    else:
+        return False
+
+
 async def main() :
     parser = argparse.ArgumentParser()
-    parser.add_argument("--media", metavar="<folder>", type=str, default=None, help="Path to store downloaded media files [Default: %(default)s]")
+    parser.add_argument("--media", metavar="<folder>", type=str, default=None, required=True, help="Path to store downloaded media files [Default: %(default)s]")
     parser.add_argument("--count", metavar="[number]", type=int, default=100, help="Max concurrent HTTP Requests [Default: %(default)s]")
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Verbose debug [Default: %(default)s]")
     parser.add_argument("--db", action=argparse.BooleanOptionalAction, type=bool, default=False, help="<Python3.12+ required> Save into DB [Default: %(default)s]")
     parser.add_argument("--nfo", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download NFO [Default: %(default)s]")
     parser.add_argument("--url", metavar="[url]", type=str, default=None, help="Download path [Default: %(default)s]")
-    parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Purge removed files [Default: %(default)s]")
+    parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=True, help="Purge removed files [Default: %(default)s]")
 
 
     args = parser.parse_args()
-    media = args.media.rstrip('/')
+    if args.media:
+        if not test_media_folder(args.media):
+            logging.error("The %s doesn't contain the desired folders, please correct the --media parameter", args.media)
+            exit()
+        else:
+            media = args.media.rstrip('/')
     if args.debug == True:
         logging.getLogger("areq").setLevel(logging.DEBUG)
     if not args.url:
         url = pick_a_pool_member(s_pool)
     else:
         url = args.url
-        if urlparse(url).path != '/':
-            args.db = False
-            args.purge = False
-            logger.info("db or purge only support in root path mode")
+    if urlparse(url).path != '/' and (args.purge or args.db):
+        logger.warning("--db or --purge only support in root path mode")
+        exit()
     if not url:
         logger.info("No servers are reachable, please check your Internet connection...")
         exit()
+    if urlparse(url).path == '/':
+        total_amount = current_amount(url + '.scan.list.gz', media)
+        logger.info("There are %d files in %s", total_amount, url)
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
     if args.db or args.purge:
@@ -280,6 +334,9 @@ async def main() :
         localdb = os.path.join(media, ".localfiles.db")
         tempdb = os.path.join(media, ".tempfiles.db")
         if not os.path.exists(localdb):
+            await generate_localdb(localdb, media)
+        elif args.db:
+            os.remove(localdb)
             await generate_localdb(localdb, media)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
@@ -289,10 +346,9 @@ async def main() :
         await db_session.commit()
         await db_session.close()
     if args.purge:
-        await purge_removed_files(localdb, tempdb, media)
-        os.remove(tempdb)
-    if args.db or args.purge:
+        await purge_removed_files(localdb, tempdb, media, total_amount)
         os.remove(localdb)
+        os.rename(tempdb, localdb)
     
 
 if __name__ == "__main__":
