@@ -19,12 +19,12 @@ import aiosqlite
 import aiofiles.os as aio_os
 
 logging.basicConfig(
-    format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
+    format="%(asctime)s %(levelname)s %(message)s",
     level=logging.INFO,
-    datefmt="%H:%M:%S",
-    stream=sys.stderr,
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
 )
-logger = logging.getLogger("areq")
+logger = logging.getLogger("emd")
 logging.getLogger("chardet.charsetprober").disabled = True
 
 
