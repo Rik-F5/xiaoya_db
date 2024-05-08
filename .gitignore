@@ -6,3 +6,4 @@ media/*
 .DS*
 *.list
 debug*
+dev.py
