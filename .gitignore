@@ -7,3 +7,4 @@ media/*
 *.list
 debug*
 dev.py
+archive
