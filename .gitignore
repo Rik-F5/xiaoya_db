@@ -1,0 +1,9 @@
+media
+media/*
+*.db
+*.sql
+.venv
+.DS*
+*.list
+debug*
+dev.py
