@@ -2,6 +2,7 @@
 # 小雅同步元数据
 
 高速异步爬虫从 https://emby.xiaoya.pro/ 同步小雅元数据
+##### [FAQ](爬虫FAQ.md)
 
 ---
 
