@@ -41,6 +41,10 @@ s_pool = [
     "https://lanyuewan.cn/"
 ]
 
+s_folder = [
+    ".sync"
+]
+
 s_ext = [
     ".ass",
     ".srt",
@@ -198,8 +202,8 @@ async def create_table(conn):
     async with conn.execute('''
         CREATE TABLE IF NOT EXISTS files (
             filename TEXT,
-            timestamp INTEGER,
-            filesize INTEGER)
+            timestamp INTEGER NULL,
+            filesize INTEGER NULL)
     '''):
         pass
 
@@ -212,11 +216,12 @@ async def exam_file(file, media):
     return file[len(media):], int(stat.st_mtime), stat.st_size
 
 async def process_folder(conn, folder, media):
-    for root, _, files in os.walk(folder):
+    for root, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in s_folder]
         for file in files:
             items = []
             if not file.startswith('.') and not file.lower().endswith(tuple(s_ext)):
-                items.append(await exam_file(os.path.join(root, file), media))
+                items.append((os.path.join(root, file)[len(media):], None, None))
                 await insert_files(conn, items)
 
 async def generate_localdb(db, media):
@@ -343,7 +348,7 @@ async def main() :
             await generate_localdb(localdb, media)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
-    async with ClientSession(connector=TCPConnector(ssl=False, timeout=3600, limit=0, ttl_dns_cache=600)) as session:
+    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=3600)) as session:
         await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo)
     if db_session:
         await db_session.commit()
