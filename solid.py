@@ -283,7 +283,10 @@ async def compare_databases(localdb, tempdb, total_amount):
 async def purge_removed_files(localdb, tempdb, media, total_amount):
     for file in await compare_databases(localdb, tempdb, total_amount):
         logger.info("Purged %s", file)
-        os.remove(media + file)
+        try:
+            os.remove(media + file)
+        except Exception as e:
+            logger.error("Unable to remove %s due to %s", file, e)
 
 
 def test_media_folder(media):
@@ -340,7 +343,7 @@ async def main() :
             await generate_localdb(localdb, media)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
-    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600)) as session:
+    async with ClientSession(connector=TCPConnector(ssl=False, timeout=3600, limit=0, ttl_dns_cache=600)) as session:
         await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo)
     if db_session:
         await db_session.commit()
