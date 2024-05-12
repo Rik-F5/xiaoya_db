@@ -5,6 +5,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from urllib.parse import urljoin, urlparse, unquote, quote
+import aiohttp.client_exceptions
 from bs4 import BeautifulSoup
 from datetime import datetime
 import random
@@ -29,14 +30,15 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 
 s_paths = [
-    quote('每日更新/'),
-    quote('电影/2023/'),
-    quote('纪录片（已刮削）/'),
-    quote('音乐/')
+#    quote('每日更新/'),
+#    quote('电影/2023/'),
+#    quote('纪录片（已刮削）/'),
+#    quote('音乐/')
+    quote('PikPak/')
 ]
 
 s_pool = [
-    "https://emby.xiaoya.pro/",
+#    "https://emby.xiaoya.pro/",
     "https://icyou.eu.org/",
     "https://lanyuewan.cn/"
 ]
@@ -100,13 +102,13 @@ def current_amount(url, media):
 async def fetch_html(url, session, **kwargs) -> str:
     semaphore = kwargs['semaphore']
     async with semaphore:
-        resp = await session.request(method="GET", url=url)
-        logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.request_info.headers)
-        resp.raise_for_status()       
-        logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
-        logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
-        html = await resp.text()
-        return html
+        async with session.request(method="GET", url=url) as resp:
+            logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.request_info.headers)
+            resp.raise_for_status()       
+            logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
+            logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
+            html = await resp.text()
+            return html
 
 async def parse(url, session, **kwargs) -> set:
     files = []
@@ -116,6 +118,8 @@ async def parse(url, session, **kwargs) -> set:
     except (
         aiohttp.ClientError,
         aiohttp.http_exceptions.HttpProcessingError,
+        aiohttp.ClientPayloadError,
+        aiohttp.ClientResponseError,
     ) as e:
         logger.error(
             "aiohttp exception for %s [%s]: %s",
@@ -141,7 +145,12 @@ async def parse(url, session, **kwargs) -> set:
                 pass
                 filename = unquote(urlparse(abslink).path)
                 timestamp_str = link.next_sibling.strip().split()[0:2]
-                timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
+#TODO: Need to handle /cdn-cgi/l/email-protection
+                try:
+                    timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
+                except:
+                    logger.info("%s: %s", filename, timestamp_str)
+                    continue
                 timestamp_unix = int(timestamp.timestamp())
                 filesize = link.next_sibling.strip().split()[2]
                 files.append((abslink, filename, timestamp_unix, filesize))
