@@ -149,7 +149,7 @@ async def parse(url, session, **kwargs) -> set:
                 try:
                     timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
                 except:
-                    logger.info("%s: %s", filename, timestamp_str)
+                    logger.error("%s: %s", filename, timestamp_str)
                     continue
                 timestamp_unix = int(timestamp.timestamp())
                 filesize = link.next_sibling.strip().split()[2]
@@ -183,19 +183,23 @@ async def download(file, session, **kwargs):
     url, filename, timestamp, filesize = file
     semaphore = kwargs['semaphore']
     async with semaphore:
-        response = await session.get(url)
-        if response.status == 200:
-            file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
-            os.umask(0)
-            os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
-            async with aiofiles.open(file_path, 'wb') as f:
-                logger.debug("Starting to write file: %s", filename)
-                await f.write(await response.content.read())
-                logger.debug("Finish to write file: %s", filename)
-            os.chmod(file_path, 0o777)
-            logger.info("Downloaded: %s", filename)
-        else:
-            logger.info("Failed to download: %s [Response code: %s]", filename, response.status)
+        try: 
+            response = await session.get(url)
+            if response.status == 200:
+                file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
+                os.umask(0)
+                os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
+                async with aiofiles.open(file_path, 'wb') as f:
+                    logger.debug("Starting to write file: %s", filename)
+                    await f.write(await response.content.read())
+                    logger.debug("Finish to write file: %s", filename)
+                os.chmod(file_path, 0o777)
+                logger.info("Downloaded: %s", filename)
+            else:
+                logger.error("Failed to download: %s [Response code: %s]", filename, response.status)
+        except Exception as e:
+            logger.exception("Download exception: %s", e)
+            
 
 
 async def download_files(files, session, **kwargs):
