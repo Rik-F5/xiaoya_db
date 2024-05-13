@@ -30,10 +30,10 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 
 s_paths = [
-#    quote('每日更新/'),
-#    quote('电影/2023/'),
-#    quote('纪录片（已刮削）/'),
-#    quote('音乐/')
+    quote('每日更新/'),
+    quote('电影/2023/'),
+    quote('纪录片（已刮削）/'),
+    quote('音乐/'),
     quote('PikPak/')
 ]
 
@@ -94,7 +94,8 @@ def current_amount(url, media):
                                 matching_lines += 1
                 except:
                     logger.error("Error decoding line: %s", line)
-            return matching_lines
+        response.close()
+        return matching_lines
     except urllib.error.URLError as e:
         print("Error:", e)
         return -1
