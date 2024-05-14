@@ -292,12 +292,15 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
     for url in directories:
         task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
         tasks.append(task)
+        if len(tasks) > 100:
+            await asyncio.gather(*tasks)
         logger.debug("Task list has %d tasks", len(tasks))
-        await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks)
     directories = None
 
 
 async def compare_databases(localdb, tempdb, total_amount):
+
     async with aiosqlite.connect(localdb) as conn1, aiosqlite.connect(tempdb) as conn2:
         cursor1 = await conn1.cursor()
         cursor2 = await conn2.cursor()
