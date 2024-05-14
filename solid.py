@@ -5,6 +5,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from urllib.parse import urljoin, urlparse, unquote, quote
+import aiohttp.client_exceptions
 from bs4 import BeautifulSoup
 from datetime import datetime
 import random
@@ -26,6 +27,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("emd")
 logging.getLogger("chardet.charsetprober").disabled = True
+
+
+s_paths_all = [
+    quote('PikPak/'),
+    quote('动漫/'),
+    quote('每日更新/'),
+    quote('电影/'),
+    quote('电视剧/'),
+    quote('纪录片/'),
+    quote('纪录片（已刮削）/'),
+    quote('综艺/'),
+    quote('音乐/'),
+    quote('📺画质演示测试（4K，8K，HDR，Dolby）/')
+]
+
 
 
 s_paths = [
@@ -73,7 +89,7 @@ def pick_a_pool_member(url_list):
             pass
     return None
 
-def current_amount(url, media):
+def current_amount(url, media, s_paths):
     listfile = os.path.join(media, ".scan.list.gz")
     try:
         res = urllib.request.urlretrieve(url, listfile)
@@ -92,7 +108,7 @@ def current_amount(url, media):
                                 matching_lines += 1
                 except:
                     logger.error("Error decoding line: %s", line)
-            return matching_lines
+        return matching_lines
     except urllib.error.URLError as e:
         print("Error:", e)
         return -1
@@ -100,13 +116,13 @@ def current_amount(url, media):
 async def fetch_html(url, session, **kwargs) -> str:
     semaphore = kwargs['semaphore']
     async with semaphore:
-        resp = await session.request(method="GET", url=url)
-        logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.request_info.headers)
-        resp.raise_for_status()       
-        logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
-        logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
-        html = await resp.text()
-        return html
+        async with session.request(method="GET", url=url) as resp:
+            logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.request_info.headers)
+            resp.raise_for_status()       
+            logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
+            logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
+            html = await resp.text()
+            return html
 
 async def parse(url, session, **kwargs) -> set:
     files = []
@@ -116,6 +132,8 @@ async def parse(url, session, **kwargs) -> set:
     except (
         aiohttp.ClientError,
         aiohttp.http_exceptions.HttpProcessingError,
+        aiohttp.ClientPayloadError,
+        aiohttp.ClientResponseError,
     ) as e:
         logger.error(
             "aiohttp exception for %s [%s]: %s",
@@ -141,7 +159,12 @@ async def parse(url, session, **kwargs) -> set:
                 pass
                 filename = unquote(urlparse(abslink).path)
                 timestamp_str = link.next_sibling.strip().split()[0:2]
-                timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
+#TODO: Need to handle /cdn-cgi/l/email-protection
+                try:
+                    timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
+                except:
+                    logger.error("%s: %s", filename, timestamp_str)
+                    continue
                 timestamp_unix = int(timestamp.timestamp())
                 filesize = link.next_sibling.strip().split()[2]
                 files.append((abslink, filename, timestamp_unix, filesize))
@@ -174,19 +197,23 @@ async def download(file, session, **kwargs):
     url, filename, timestamp, filesize = file
     semaphore = kwargs['semaphore']
     async with semaphore:
-        response = await session.get(url)
-        if response.status == 200:
-            file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
-            os.umask(0)
-            os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
-            async with aiofiles.open(file_path, 'wb') as f:
-                logger.debug("Starting to write file: %s", filename)
-                await f.write(await response.content.read())
-                logger.debug("Finish to write file: %s", filename)
-            os.chmod(file_path, 0o777)
-            logger.info("Downloaded: %s", filename)
-        else:
-            logger.info("Failed to download: %s [Response code: %s]", filename, response.status)
+        try: 
+            async with session.get(url) as response:
+                if response.status == 200:
+                    file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
+                    os.umask(0)
+                    os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
+                    async with aiofiles.open(file_path, 'wb') as f:
+                        logger.debug("Starting to write file: %s", filename)
+                        await f.write(await response.content.read())
+                        logger.debug("Finish to write file: %s", filename)
+                    os.chmod(file_path, 0o777)
+                    logger.info("Downloaded: %s", filename)
+                else:
+                    logger.error("Failed to download: %s [Response code: %s]", filename, response.status)
+        except Exception as e:
+            logger.exception("Download exception: %s", e)
+            
 
 
 async def download_files(files, session, **kwargs):
@@ -224,7 +251,7 @@ async def process_folder(conn, folder, media):
                 items.append((os.path.join(root, file)[len(media):], None, None))
                 await insert_files(conn, items)
 
-async def generate_localdb(db, media):
+async def generate_localdb(db, media, s_paths):
     async with aiosqlite.connect(db) as conn:
         await create_table(conn)
         for path in s_paths:
@@ -236,7 +263,7 @@ async def write_one(url, session, db_session, **kwargs) -> list:
     # This is a hack.. To be compatible with the website with the full data rather than updating ones.
     if urlparse(url).path == '/':
         directories = []
-        for path in s_paths:
+        for path in kwargs['s_paths']:
             directories.append(urljoin(url, path))
         return directories
     files, directories = await parse(url=url, session=session, **kwargs)
@@ -260,6 +287,7 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
     for url in directories:
         task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
         tasks.append(task)
+        logger.debug("Task list has %d tasks", len(tasks))
     await asyncio.gather(*tasks)
 
 
@@ -294,7 +322,7 @@ async def purge_removed_files(localdb, tempdb, media, total_amount):
             logger.error("Unable to remove %s due to %s", file, e)
 
 
-def test_media_folder(media):
+def test_media_folder(media, s_paths):
     paths = [os.path.join(media, unquote(path)) for path in s_paths]
     if all(os.path.exists(os.path.abspath(path)) for path in paths):
         return True
@@ -311,17 +339,23 @@ async def main() :
     parser.add_argument("--nfo", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download NFO [Default: %(default)s]")
     parser.add_argument("--url", metavar="[url]", type=str, default=None, help="Download path [Default: %(default)s]")
     parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=True, help="Purge removed files [Default: %(default)s]")
+    parser.add_argument("--all", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download all folders [Default: %(default)s]")
+
 
 
     args = parser.parse_args()
+    if args.debug == True:
+        logging.getLogger("emd").setLevel(logging.DEBUG)
+    if args.all == True:
+        s_paths = s_paths_all
+        s_pool.pop(0)
+        args.db = True
     if args.media:
-        if not test_media_folder(args.media):
+        if not test_media_folder(args.media, s_paths):
             logging.error("The %s doesn't contain the desired folders, please correct the --media parameter", args.media)
             exit()
         else:
             media = args.media.rstrip('/')
-    if args.debug == True:
-        logging.getLogger("areq").setLevel(logging.DEBUG)
     if not args.url:
         url = pick_a_pool_member(s_pool)
     else:
@@ -333,7 +367,7 @@ async def main() :
         logger.info("No servers are reachable, please check your Internet connection...")
         exit()
     if urlparse(url).path == '/':
-        total_amount = current_amount(url + '.scan.list.gz', media)
+        total_amount = current_amount(url + '.scan.list.gz', media, s_paths)
         logger.info("There are %d files in %s", total_amount, url)
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
@@ -342,14 +376,14 @@ async def main() :
         localdb = os.path.join(media, ".localfiles.db")
         tempdb = os.path.join(media, ".tempfiles.db")
         if not os.path.exists(localdb):
-            await generate_localdb(localdb, media)
+            await generate_localdb(localdb, media, s_paths)
         elif args.db:
             os.remove(localdb)
-            await generate_localdb(localdb, media)
+            await generate_localdb(localdb, media, s_paths)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
     async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=3600)) as session:
-        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo)
+        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo, s_paths=s_paths)
     if db_session:
         await db_session.commit()
         await db_session.close()
