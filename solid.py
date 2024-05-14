@@ -19,6 +19,9 @@ from aiohttp import ClientSession, TCPConnector
 import aiosqlite
 import aiofiles.os as aio_os
 
+import objgraph
+
+
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     level=logging.INFO,
@@ -121,8 +124,7 @@ async def fetch_html(url, session, **kwargs) -> str:
             resp.raise_for_status()       
             logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
             logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
-            html = await resp.text()
-            return html
+            return await resp.text()
 
 async def parse(url, session, **kwargs) -> set:
     files = []
@@ -170,6 +172,8 @@ async def parse(url, session, **kwargs) -> set:
                 files.append((abslink, filename, timestamp_unix, filesize))
             elif href != '../':
                 directories.append(urljoin(url, href))
+            href = None
+        soup = None
         return files, directories
 
 async def need_download(file, **kwargs):
@@ -261,6 +265,7 @@ async def generate_localdb(db, media, paths):
 
 async def write_one(url, session, db_session, **kwargs) -> list:
     # This is a hack.. To be compatible with the website with the full data rather than updating ones.
+#    objgraph.show_most_common_types(limit=5)
     if urlparse(url).path == '/':
         directories = []
         for path in kwargs['paths']:
@@ -288,7 +293,8 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
         task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
         tasks.append(task)
         logger.debug("Task list has %d tasks", len(tasks))
-    await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks)
+    directories = None
 
 
 async def compare_databases(localdb, tempdb, total_amount):
@@ -349,7 +355,8 @@ async def main() :
     if args.all == True:
         paths = s_paths_all
         s_pool.pop(0)
-        args.db = True
+        if args.purge == True:
+            args.db = True
     else:
         paths = s_paths
     if args.media:
