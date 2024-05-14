@@ -265,7 +265,7 @@ async def generate_localdb(db, media, paths):
 
 async def write_one(url, session, db_session, **kwargs) -> list:
     # This is a hack.. To be compatible with the website with the full data rather than updating ones.
-#    objgraph.show_most_common_types(limit=5)
+    #objgraph.show_most_common_types(limit=5)
     if urlparse(url).path == '/':
         directories = []
         for path in kwargs['paths']:
@@ -292,10 +292,11 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
     for url in directories:
         task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
         tasks.append(task)
-        if len(tasks) > 100:
+        if len(tasks) > 10:
             await asyncio.gather(*tasks)
         logger.debug("Task list has %d tasks", len(tasks))
     await asyncio.gather(*tasks)
+    tasks = None
     directories = None
 
 
