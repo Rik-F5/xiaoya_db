@@ -274,6 +274,7 @@ async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
     for url in directories:
         task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
         tasks.append(task)
+        logger.info("Task list has %d tasks", len(tasks))
     await asyncio.gather(*tasks)
 
 
