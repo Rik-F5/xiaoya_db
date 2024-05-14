@@ -89,7 +89,7 @@ def pick_a_pool_member(url_list):
             pass
     return None
 
-def current_amount(url, media, s_paths):
+def current_amount(url, media, paths):
     listfile = os.path.join(media, ".scan.list.gz")
     try:
         res = urllib.request.urlretrieve(url, listfile)
@@ -103,7 +103,7 @@ def current_amount(url, media, s_paths):
                     match = re.match(pattern, line)
                     if match:
                         file = match.group(1)
-                        if any(file.startswith(unquote(path)) for path in s_paths):
+                        if any(file.startswith(unquote(path)) for path in paths):
                             if not re.match(hidden_pattern, file):
                                 matching_lines += 1
                 except:
@@ -251,10 +251,10 @@ async def process_folder(conn, folder, media):
                 items.append((os.path.join(root, file)[len(media):], None, None))
                 await insert_files(conn, items)
 
-async def generate_localdb(db, media, s_paths):
+async def generate_localdb(db, media, paths):
     async with aiosqlite.connect(db) as conn:
         await create_table(conn)
-        for path in s_paths:
+        for path in paths:
             logger.info("Processing %s", unquote(os.path.join(media, path)))
             await process_folder(conn, unquote(os.path.join(media, path)), media)
         await conn.close()
@@ -263,7 +263,7 @@ async def write_one(url, session, db_session, **kwargs) -> list:
     # This is a hack.. To be compatible with the website with the full data rather than updating ones.
     if urlparse(url).path == '/':
         directories = []
-        for path in kwargs['s_paths']:
+        for path in kwargs['paths']:
             directories.append(urljoin(url, path))
         return directories
     files, directories = await parse(url=url, session=session, **kwargs)
@@ -322,9 +322,9 @@ async def purge_removed_files(localdb, tempdb, media, total_amount):
             logger.error("Unable to remove %s due to %s", file, e)
 
 
-def test_media_folder(media, s_paths):
-    paths = [os.path.join(media, unquote(path)) for path in s_paths]
-    if all(os.path.exists(os.path.abspath(path)) for path in paths):
+def test_media_folder(media, paths):
+    t_paths = [os.path.join(media, unquote(path)) for path in paths]
+    if all(os.path.exists(os.path.abspath(path)) for path in t_paths):
         return True
     else:
         return False
@@ -347,11 +347,13 @@ async def main() :
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
     if args.all == True:
-        s_paths = s_paths_all
+        paths = s_paths_all
         s_pool.pop(0)
         args.db = True
+    else:
+        paths = s_paths
     if args.media:
-        if not test_media_folder(args.media, s_paths):
+        if not test_media_folder(args.media, paths):
             logging.error("The %s doesn't contain the desired folders, please correct the --media parameter", args.media)
             exit()
         else:
@@ -367,7 +369,7 @@ async def main() :
         logger.info("No servers are reachable, please check your Internet connection...")
         exit()
     if urlparse(url).path == '/':
-        total_amount = current_amount(url + '.scan.list.gz', media, s_paths)
+        total_amount = current_amount(url + '.scan.list.gz', media, paths)
         logger.info("There are %d files in %s", total_amount, url)
     semaphore = asyncio.Semaphore(args.count)
     db_session = None
@@ -376,14 +378,14 @@ async def main() :
         localdb = os.path.join(media, ".localfiles.db")
         tempdb = os.path.join(media, ".tempfiles.db")
         if not os.path.exists(localdb):
-            await generate_localdb(localdb, media, s_paths)
+            await generate_localdb(localdb, media, paths)
         elif args.db:
             os.remove(localdb)
-            await generate_localdb(localdb, media, s_paths)
+            await generate_localdb(localdb, media, paths)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
     async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=3600)) as session:
-        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo, s_paths=s_paths)
+        await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo, paths=paths)
     if db_session:
         await db_session.commit()
         await db_session.close()
