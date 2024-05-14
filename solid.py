@@ -384,7 +384,7 @@ async def main() :
             await generate_localdb(localdb, media, paths)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
-    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=3600)) as session:
+    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=36000)) as session:
         await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo, paths=paths)
     if db_session:
         await db_session.commit()
