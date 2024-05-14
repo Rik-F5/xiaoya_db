@@ -94,7 +94,6 @@ def current_amount(url, media):
                                 matching_lines += 1
                 except:
                     logger.error("Error decoding line: %s", line)
-        response.close()
         return matching_lines
     except urllib.error.URLError as e:
         print("Error:", e)
@@ -185,19 +184,19 @@ async def download(file, session, **kwargs):
     semaphore = kwargs['semaphore']
     async with semaphore:
         try: 
-            response = await session.get(url)
-            if response.status == 200:
-                file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
-                os.umask(0)
-                os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
-                async with aiofiles.open(file_path, 'wb') as f:
-                    logger.debug("Starting to write file: %s", filename)
-                    await f.write(await response.content.read())
-                    logger.debug("Finish to write file: %s", filename)
-                os.chmod(file_path, 0o777)
-                logger.info("Downloaded: %s", filename)
-            else:
-                logger.error("Failed to download: %s [Response code: %s]", filename, response.status)
+            async with session.get(url) as response:
+                if response.status == 200:
+                    file_path = os.path.join(kwargs['media'], filename.lstrip('/'))
+                    os.umask(0)
+                    os.makedirs(os.path.dirname(file_path), mode=0o777, exist_ok=True)
+                    async with aiofiles.open(file_path, 'wb') as f:
+                        logger.debug("Starting to write file: %s", filename)
+                        await f.write(await response.content.read())
+                        logger.debug("Finish to write file: %s", filename)
+                    os.chmod(file_path, 0o777)
+                    logger.info("Downloaded: %s", filename)
+                else:
+                    logger.error("Failed to download: %s [Response code: %s]", filename, response.status)
         except Exception as e:
             logger.exception("Download exception: %s", e)
             
