@@ -226,6 +226,8 @@ async def download_files(files, session, **kwargs):
             task = asyncio.create_task(download(file, session, **kwargs))
             task.add_done_callback(download_tasks.discard)
             download_tasks.add(task)
+            if len(download_tasks) > 100:
+                await asyncio.gather(*download_tasks)
     await asyncio.gather(*download_tasks)
 
 
