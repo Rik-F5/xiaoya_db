@@ -19,6 +19,8 @@ from aiohttp import ClientSession, TCPConnector
 import aiosqlite
 import aiofiles.os as aio_os
 
+
+
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     level=logging.INFO,
@@ -121,8 +123,7 @@ async def fetch_html(url, session, **kwargs) -> str:
             resp.raise_for_status()       
             logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
             logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
-            html = await resp.text()
-            return html
+            return await resp.text()
 
 async def parse(url, session, **kwargs) -> set:
     files = []
@@ -170,6 +171,8 @@ async def parse(url, session, **kwargs) -> set:
                 files.append((abslink, filename, timestamp_unix, filesize))
             elif href != '../':
                 directories.append(urljoin(url, href))
+            href = None
+        soup = None
         return files, directories
 
 async def need_download(file, **kwargs):
@@ -217,11 +220,14 @@ async def download(file, session, **kwargs):
 
 
 async def download_files(files, session, **kwargs):
-    download_tasks = []
+    download_tasks = set()
     for file in files:
         if await need_download(file, **kwargs) == True:
             task = asyncio.create_task(download(file, session, **kwargs))
-            download_tasks.append(task)
+            task.add_done_callback(download_tasks.discard)
+            download_tasks.add(task)
+            if len(download_tasks) > 100:
+                await asyncio.gather(*download_tasks)
     await asyncio.gather(*download_tasks)
 
 
@@ -281,17 +287,20 @@ async def write_one(url, session, db_session, **kwargs) -> list:
     return directories
 
 
-async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
-    tasks = []
+async def bulk_crawl_and_write(url, session, db_session, depth=0, **kwargs) -> None:
+    tasks = set()
     directories = await write_one(url=url, session=session, db_session=db_session, **kwargs)
     for url in directories:
-        task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
-        tasks.append(task)
-        logger.debug("Task list has %d tasks", len(tasks))
+        task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, depth=depth + 1, **kwargs))
+        task.add_done_callback(tasks.discard)
+        tasks.add(task)
+        if depth == 0:
+            await asyncio.gather(*tasks)
     await asyncio.gather(*tasks)
 
 
 async def compare_databases(localdb, tempdb, total_amount):
+
     async with aiosqlite.connect(localdb) as conn1, aiosqlite.connect(tempdb) as conn2:
         cursor1 = await conn1.cursor()
         cursor2 = await conn2.cursor()
@@ -349,7 +358,8 @@ async def main() :
     if args.all == True:
         paths = s_paths_all
         s_pool.pop(0)
-        args.db = True
+        if args.purge == True:
+            args.db = True
     else:
         paths = s_paths
     if args.media:
@@ -384,7 +394,7 @@ async def main() :
             await generate_localdb(localdb, media, paths)
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
-    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=3600)) as session:
+    async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=36000)) as session:
         await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo, paths=paths)
     if db_session:
         await db_session.commit()
@@ -392,7 +402,8 @@ async def main() :
     if args.purge:
         await purge_removed_files(localdb, tempdb, media, total_amount)
         os.remove(localdb)
-        os.rename(tempdb, localdb)
+        if not args.all:
+            os.rename(tempdb, localdb)
     
 
 if __name__ == "__main__":
