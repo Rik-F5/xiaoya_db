@@ -248,22 +248,31 @@ async def exam_file(file, media):
     stat = await aio_os.stat(file)
     return file[len(media):], int(stat.st_mtime), stat.st_size
 
-async def process_folder(conn, folder, media):
+def process_folder(conn, folder, media):
+    all_items = []
     for root, dirs, files in os.walk(folder):
         dirs[:] = [d for d in dirs if d not in s_folder]
         for file in files:
-            items = []
             if not file.startswith('.') and not file.lower().endswith(tuple(s_ext)):
-                items.append((os.path.join(root, file)[len(media):], None, None))
-                await insert_files(conn, items)
+                all_items.append((os.path.join(root, file)[len(media):], None, None))
+    return all_items
 
 async def generate_localdb(db, media, paths):
+    logger.warning("Generating local DB... It takes time depends on the DiskI/O performance... Do NOT quit...")
     async with aiosqlite.connect(db) as conn:
         await create_table(conn)
         for path in paths:
             logger.info("Processing %s", unquote(os.path.join(media, path)))
-            await process_folder(conn, unquote(os.path.join(media, path)), media)
-        await conn.close()
+            items = process_folder(conn, unquote(os.path.join(media, path)), media)
+            await insert_files(conn, items)
+        total_items_count = await get_total_items_count(conn)
+        logger.info("There are %d files on the local disk", total_items_count)
+        
+async def get_total_items_count(conn):
+    async with conn.execute('SELECT COUNT(*) FROM files') as cursor:
+        result = await cursor.fetchone()
+        total_count = result[0] if result else 0
+    return total_count
 
 async def write_one(url, session, db_session, **kwargs) -> list:
     # This is a hack.. To be compatible with the website with the full data rather than updating ones.
@@ -392,8 +401,18 @@ async def main() :
         elif args.db:
             os.remove(localdb)
             await generate_localdb(localdb, media, paths)
+        else:
+            async with aiosqlite.connect(localdb) as local_session:
+                local_amount = await get_total_items_count(local_session)
+                if local_amount > 0 and abs(total_amount - local_amount) > 10000:
+                    logger.warning("The local DB isn't intact. regenerating...")
+                    await local_session.execute('DELETE FROM files')
+                    await local_session.commit()
+                    await generate_localdb(localdb, media, paths)
+
         db_session = await aiosqlite.connect(tempdb)
         await create_table(db_session)
+    logger.info("Crawling slowly...")
     async with ClientSession(connector=TCPConnector(ssl=False, limit=0, ttl_dns_cache=600), timeout=aiohttp.ClientTimeout(total=36000)) as session:
         await bulk_crawl_and_write(url=url, session=session, db_session=db_session, semaphore=semaphore, media=media, nfo=args.nfo, paths=paths)
     if db_session:
