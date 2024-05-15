@@ -402,7 +402,8 @@ async def main() :
     if args.purge:
         await purge_removed_files(localdb, tempdb, media, total_amount)
         os.remove(localdb)
-        os.rename(tempdb, localdb)
+        if not args.all:
+            os.rename(tempdb, localdb)
     
 
 if __name__ == "__main__":
