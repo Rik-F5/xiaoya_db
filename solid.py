@@ -19,7 +19,6 @@ from aiohttp import ClientSession, TCPConnector
 import aiosqlite
 import aiofiles.os as aio_os
 
-import objgraph
 
 
 logging.basicConfig(
@@ -221,11 +220,12 @@ async def download(file, session, **kwargs):
 
 
 async def download_files(files, session, **kwargs):
-    download_tasks = []
+    download_tasks = set()
     for file in files:
         if await need_download(file, **kwargs) == True:
             task = asyncio.create_task(download(file, session, **kwargs))
-            download_tasks.append(task)
+            task.add_done_callback(download_tasks.discard)
+            download_tasks.add(task)
     await asyncio.gather(*download_tasks)
 
 
@@ -265,7 +265,6 @@ async def generate_localdb(db, media, paths):
 
 async def write_one(url, session, db_session, **kwargs) -> list:
     # This is a hack.. To be compatible with the website with the full data rather than updating ones.
-    #objgraph.show_most_common_types(limit=5)
     if urlparse(url).path == '/':
         directories = []
         for path in kwargs['paths']:
@@ -286,18 +285,16 @@ async def write_one(url, session, db_session, **kwargs) -> list:
     return directories
 
 
-async def bulk_crawl_and_write(url, session, db_session, **kwargs) -> None:
-    tasks = []
+async def bulk_crawl_and_write(url, session, db_session, depth=0, **kwargs) -> None:
+    tasks = set()
     directories = await write_one(url=url, session=session, db_session=db_session, **kwargs)
     for url in directories:
-        task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, **kwargs))
-        tasks.append(task)
-        if len(tasks) > 10:
+        task = asyncio.create_task(bulk_crawl_and_write(url=url, session=session, db_session=db_session, depth=depth + 1, **kwargs))
+        task.add_done_callback(tasks.discard)
+        tasks.add(task)
+        if depth == 0:
             await asyncio.gather(*tasks)
-        logger.debug("Task list has %d tasks", len(tasks))
     await asyncio.gather(*tasks)
-    tasks = None
-    directories = None
 
 
 async def compare_databases(localdb, tempdb, total_amount):
