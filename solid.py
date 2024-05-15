@@ -404,6 +404,8 @@ async def main() :
         os.remove(localdb)
         if not args.all:
             os.rename(tempdb, localdb)
+        else:
+            os.remove(tempdb)
     
 
 if __name__ == "__main__":
