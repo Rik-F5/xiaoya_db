@@ -270,7 +270,7 @@ async def generate_localdb(db, media, paths):
         await create_table(conn)
         for path in paths:
             logger.info("Processing %s", unquote(os.path.join(media, path)))
-            items = process_folder(conn, unquote(os.path.join(media, path)), media)
+            items = process_folder(unquote(os.path.join(media, path)), media)
             await insert_files(conn, items)
         total_items_count = await get_total_items_count(conn)
         logger.info("There are %d files on the local disk", total_items_count)
