@@ -248,14 +248,21 @@ async def exam_file(file, media):
     stat = await aio_os.stat(file)
     return file[len(media):], int(stat.st_mtime), stat.st_size
 
-def process_folder(conn, folder, media):
+def process_folder(folder, media):
     all_items = []
-    for root, dirs, files in os.walk(folder):
+    for root, dirs, files in os.walk(folder, topdown=False):
         dirs[:] = [d for d in dirs if d not in s_folder]
         for file in files:
             if not file.startswith('.') and not file.lower().endswith(tuple(s_ext)):
                 all_items.append((os.path.join(root, file)[len(media):], None, None))
+        if not dirs and not files:
+            try:
+                os.rmdir(root)
+                logger.info("Deleted empty folder: %s", root)
+            except OSError as e:
+                logger.error("Failed to delete folder %s: %s", root, e)
     return all_items
+
 
 async def generate_localdb(db, media, paths):
     logger.warning("Generating local DB... It takes time depends on the DiskI/O performance... Do NOT quit...")
