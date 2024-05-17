@@ -218,7 +218,6 @@ async def download(file, session, **kwargs):
             logger.exception("Download exception: %s", e)
             
 
-
 async def download_files(files, session, **kwargs):
     download_tasks = set()
     for file in files:
@@ -255,13 +254,19 @@ def process_folder(folder, media):
         for file in files:
             if not file.startswith('.') and not file.lower().endswith(tuple(s_ext)):
                 all_items.append((os.path.join(root, file)[len(media):], None, None))
-        if not dirs and not files:
-            try:
-                os.rmdir(root)
-                logger.info("Deleted empty folder: %s", root)
-            except OSError as e:
-                logger.error("Failed to delete folder %s: %s", root, e)
     return all_items
+
+
+def remove_empty_folders(paths, media):
+    for path in paths:
+        for root, dirs, files in os.walk(unquote(os.path.join(media, path)), topdown=False):
+            dirs[:] = [d for d in dirs if d not in s_folder]
+            if not dirs and not files:
+                try:
+                    os.rmdir(root)
+                    logger.info("Deleted empty folder: %s", root)
+                except OSError as e:
+                    logger.error("Failed to delete folder %s: %s", root, e)
 
 
 async def generate_localdb(db, media, paths):
@@ -427,6 +432,7 @@ async def main() :
         await db_session.close()
     if args.purge:
         await purge_removed_files(localdb, tempdb, media, total_amount)
+        remove_empty_folders(paths, media)
         os.remove(localdb)
         if not args.all:
             os.rename(tempdb, localdb)
