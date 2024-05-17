@@ -12,6 +12,7 @@ import random
 import re
 import gzip
 
+
 import asyncio
 import aiofiles
 import aiohttp
@@ -231,13 +232,17 @@ async def download_files(files, session, **kwargs):
 
 
 async def create_table(conn):
-    async with conn.execute('''
-        CREATE TABLE IF NOT EXISTS files (
-            filename TEXT,
-            timestamp INTEGER NULL,
-            filesize INTEGER NULL)
-    '''):
-        pass
+    try:
+        async with conn.execute('''
+            CREATE TABLE IF NOT EXISTS files (
+                filename TEXT,
+                timestamp INTEGER NULL,
+                filesize INTEGER NULL)
+        '''):
+            pass
+    except Exception as e:
+        logger.error("Unable to create DB due to %s", e)
+        exit()
 
 async def insert_files(conn, items):
     await conn.executemany('INSERT OR REPLACE INTO files VALUES (?, ?, ?)', items)
@@ -359,6 +364,15 @@ def test_media_folder(media, paths):
     else:
         return False
 
+def test_db_folder(location):
+    if not os.path.isdir(location):
+        logging.error("The path %s is not a directory.", location)
+        return False
+    if not os.access(location, os.W_OK):
+        logging.error("The directory %s doesn't have write permission.", location)
+        return False
+    return True
+
 
 async def main() :
     parser = argparse.ArgumentParser()
@@ -370,12 +384,14 @@ async def main() :
     parser.add_argument("--url", metavar="[url]", type=str, default=None, help="Download path [Default: %(default)s]")
     parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=True, help="Purge removed files [Default: %(default)s]")
     parser.add_argument("--all", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download all folders [Default: %(default)s]")
+    parser.add_argument("--location", metavar="<folder>", type=str, default=None, required=None, help="Path to store database files [Default: %(default)s]")
 
 
 
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
+    logging.info("*** xiaoya_emd version 1.1.2 ***")
     if args.all == True:
         paths = s_paths_all
         s_pool.pop(0)
@@ -406,8 +422,15 @@ async def main() :
     db_session = None
     if args.db or args.purge:
         assert sys.version_info >= (3, 12), "DB function requires Python 3.12+."
-        localdb = os.path.join(media, ".localfiles.db")
-        tempdb = os.path.join(media, ".tempfiles.db")
+        if args.location:
+            if test_db_folder(args.location) == True: 
+                db_location =  args.location.rstrip('/')
+            else:
+                exit()
+        else:
+            db_location = media
+        localdb = os.path.join(db_location, ".localfiles.db")
+        tempdb = os.path.join(db_location, ".tempfiles.db")
         if not os.path.exists(localdb):
             await generate_localdb(localdb, media, paths)
         elif args.db:
