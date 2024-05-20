@@ -185,15 +185,11 @@ async def need_download(file, **kwargs):
     elif file_path.endswith('.nfo'):
         if not kwargs['nfo']:
             return False
-        else:
-            pass
-    else:
-        current_filesize = os.path.getsize(file_path)
-        current_timestamp = os.path.getmtime(file_path)
-        logger.debug("%s has timestamp: %s and size: %s", filename, current_timestamp, current_filesize)
-        if int(filesize) == int(current_filesize) and int(timestamp) <= int(current_timestamp):
-            return False
+    current_filesize = os.path.getsize(file_path)
+    current_timestamp = os.path.getmtime(file_path)
     logger.debug("%s has timestamp: %s and size: %s", filename, timestamp, filesize)
+    if int(filesize) == int(current_filesize) and int(timestamp) <= int(current_timestamp):
+        return False
     logger.debug("%s has current_timestamp: %s and current_size: %s", filename, current_timestamp, current_filesize)
     return True
 
@@ -461,6 +457,7 @@ async def main() :
             os.rename(tempdb, localdb)
         else:
             os.remove(tempdb)
+    logger.info("Finished...")
     
 
 if __name__ == "__main__":
