@@ -254,7 +254,17 @@ def process_folder(folder, media):
         dirs[:] = [d for d in dirs if d not in s_folder]
         for file in files:
             if not file.startswith('.') and not file.lower().endswith(tuple(s_ext)):
-                all_items.append((os.path.join(root, file)[len(media):], None, None))
+                file_path = os.path.join(root, file)
+                try:
+                    # Attempt to decode the filename to UTF-8
+                    file_path.encode('utf-8')
+                    relative_path = file_path[len(media):]
+                except UnicodeEncodeError:
+                    # Log if the filename is not UTF-8
+                    logging.error("Filename is not UTF-8 encoded: %s", file_path)
+                    relative_path = None  # Handle or skip the invalid path as needed
+                if relative_path:
+                    all_items.append((relative_path, None, None))
     return all_items
 
 
