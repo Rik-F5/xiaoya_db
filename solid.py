@@ -379,6 +379,30 @@ def test_db_folder(location):
         return False
     return True
 
+def load_paths_from_file(path_file):
+    if not os.path.exists(path_file):
+        logging.error("Path file does not exist: %s", path_file)
+        exit()
+
+    paths = []
+    with open(path_file, 'r', encoding='utf-8') as file:
+        for line in file:
+            stripped_line = line.strip()
+            if stripped_line:
+                encoded_path = quote(stripped_line)
+                if is_subpath(encoded_path, s_paths_all):
+                    paths.append(encoded_path)
+                else:
+                    logging.error("Path is invalid: %s", unquote(encoded_path))
+                    exit()
+    return paths
+
+def is_subpath(path, base_paths):
+    for base_path in base_paths:
+        if path.startswith(base_path):
+            return True
+    return False
+
 
 async def main() :
     parser = argparse.ArgumentParser()
@@ -391,20 +415,34 @@ async def main() :
     parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=True, help="Purge removed files [Default: %(default)s]")
     parser.add_argument("--all", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download all folders [Default: %(default)s]")
     parser.add_argument("--location", metavar="<folder>", type=str, default=None, required=None, help="Path to store database files [Default: %(default)s]")
+    parser.add_argument('--paths', metavar="<file>", type=str, help='File containing paths to select (See paths.example)')
 
 
 
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.1.2 ***")
-    if args.all == True:
+    logging.info("*** xiaoya_emd version 1.2.0b ***")
+    paths = []
+    if args.all:
         paths = s_paths_all
         s_pool.pop(0)
-        if args.purge == True:
+        if args.purge:
             args.db = True
     else:
-        paths = s_paths
+        if args.paths:
+            paths_from_file = load_paths_from_file(args.paths)
+            if not paths_from_file:
+                logging.error("Path file doesn't contain any valid paths: %s", args.paths)
+                exit()
+            for path in paths_from_file:
+                if not is_subpath(path, s_paths):
+                    s_pool.pop(0)
+                    break
+            paths.extend(paths_from_file)
+        if not paths:
+            paths = s_paths
+
     if args.media:
         if not test_media_folder(args.media, paths):
             logging.error("The %s doesn't contain the desired folders, please correct the --media parameter", args.media)
@@ -445,7 +483,7 @@ async def main() :
         else:
             async with aiosqlite.connect(localdb) as local_session:
                 local_amount = await get_total_items_count(local_session)
-                if local_amount > 0 and abs(total_amount - local_amount) > 10000:
+                if local_amount > 0 and abs(total_amount - local_amount) > 1000:
                     logger.warning("The local DB isn't intact. regenerating...")
                     await local_session.execute('DELETE FROM files')
                     await local_session.commit()

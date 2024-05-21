@@ -81,19 +81,25 @@ python solid.py
 ## Parameters
 
 ```bash
--h, --help           show this help message and exit
+  -h, --help           show this help message and exit
 
---media <folder>     Path to store downloaded media files [Default: None]
+  --media <folder>     Path to store downloaded media files [Default: None]
 
---count [number]     Max concurrent HTTP Requests [Default: 100]
+  --count [number]     Max concurrent HTTP Requests [Default: 100]
 
---debug, --no-debug  Verbose debug [Default: False]
+  --debug, --no-debug  Verbose debug [Default: False]
 
---db, --no-db        Force to regenerate local DB [Default: False]
+  --db, --no-db        <Python3.12+ required> Save into DB [Default: False]
 
---nfo, --no-nfo      Download NFO [Default: False]
+  --nfo, --no-nfo      Download NFO [Default: False]
 
---url [url]          Download path [Default: None]
+  --url [url]          Download path [Default: None]
 
---purge, --no-purge  Purge removed files [Default: True]
+  --purge, --no-purge  Purge removed files [Default: True]
+
+  --all, --no-all      Download all folders [Default: False]
+
+  --location <folder>  Path to store database files [Default: None]
+
+  --paths <file>       File containing paths to select (See paths.example)
 ···
