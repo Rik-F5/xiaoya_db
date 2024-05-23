@@ -60,7 +60,8 @@ s_pool = [
     "https://lanyuewan.cn/",
     "http://emby.xiaoya.8.net.co/",
     "http://emby.xiaoya.raydoom.tk/",
-    "https://emby.kaiserver.uk/"
+    "https://emby.kaiserver.uk/",
+    "https://embyxiaoya.laogl.top/"
 ]
 
 s_folder = [
