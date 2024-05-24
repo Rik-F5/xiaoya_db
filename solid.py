@@ -58,8 +58,8 @@ s_pool = [
     "https://emby.xiaoya.pro/",
     "https://icyou.eu.org/",
     "https://lanyuewan.cn/",
-    "http://emby.xiaoya.8.net.co/",
-    "http://emby.xiaoya.raydoom.tk/",
+    "https://emby.8.net.co/",
+    "https://emby.raydoom.tk/",
     "https://emby.kaiserver.uk/",
     "https://embyxiaoya.laogl.top/"
 ]
