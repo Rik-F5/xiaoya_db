@@ -62,7 +62,11 @@ s_pool = [
     "https://emby.raydoom.tk/",
     "https://emby.kaiserver.uk/",
     "https://embyxiaoya.laogl.top/",
-    "https://emby-data.raydoom.tk/"
+    "https://emby-data.raydoom.tk/",
+    "https://emby-data.5168168.xyz/",
+    "https://emby-data.ermaokj.com/",
+    "https://emby-data.tmxy.pp.ua/",
+    "https://emby-data.poxi1221.eu.org/"
 ]
 
 s_folder = [
