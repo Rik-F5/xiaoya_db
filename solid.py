@@ -492,7 +492,7 @@ async def main() :
         else:
             async with aiosqlite.connect(localdb) as local_session:
                 local_amount = await get_total_items_count(local_session)
-                if local_amount > 0 and abs(total_amount - local_amount) > 1000:
+                if local_amount > 0 and total_amount > 0 and abs(total_amount - local_amount) > 1000:
                     logger.warning("The local DB isn't intact. regenerating...")
                     await local_session.execute('DELETE FROM files')
                     await local_session.commit()
