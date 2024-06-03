@@ -101,5 +101,5 @@ python solid.py
 
   --location <folder>  Path to store database files [Default: None]
 
-  --paths <file>       File containing paths to select (See paths.example)
+  --paths <file>       Bitmap of paths or a file containing paths to be selected (See paths.example)
 ···

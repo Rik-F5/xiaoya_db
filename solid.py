@@ -33,16 +33,16 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 
 s_paths_all = [
-    quote('PikPak/'),
-    quote('动漫/'),
-    quote('每日更新/'),
-    quote('电影/'),
-    quote('电视剧/'),
-    quote('纪录片/'),
-    quote('纪录片（已刮削）/'),
-    quote('综艺/'),
-    quote('音乐/'),
-    quote('📺画质演示测试（4K，8K，HDR，Dolby）/')
+    quote('PikPak/'),                           # 512
+    quote('动漫/'),                              # 256
+    quote('每日更新/'),                           # 128
+    quote('电影/'),                              # 64 
+    quote('电视剧/'),                            # 32
+    quote('纪录片/'),                            # 16
+    quote('纪录片（已刮削）/'),                    # 8
+    quote('综艺/'),                              # 4
+    quote('音乐/'),                              # 2
+    quote('📺画质演示测试（4K，8K，HDR，Dolby）/')  # 1
 ]
 
 
@@ -51,7 +51,8 @@ s_paths = [
     quote('每日更新/'),
     quote('电影/2023/'),
     quote('纪录片（已刮削）/'),
-    quote('音乐/')
+    quote('音乐/'),
+    quote('综艺/')
 ]
 
 s_pool = [
@@ -392,21 +393,20 @@ def test_db_folder(location):
     return True
 
 def load_paths_from_file(path_file):
-    if not os.path.exists(path_file):
-        logging.error("Path file does not exist: %s", path_file)
-        exit()
-
     paths = []
-    with open(path_file, 'r', encoding='utf-8') as file:
-        for line in file:
-            stripped_line = line.strip()
-            if stripped_line:
-                encoded_path = quote(stripped_line)
-                if is_subpath(encoded_path, s_paths_all):
-                    paths.append(encoded_path)
-                else:
-                    logging.error("Path is invalid: %s", unquote(encoded_path))
-                    exit()
+    try:
+        with open(path_file, 'r', encoding='utf-8') as file:
+            for line in file:
+                stripped_line = line.strip()
+                if stripped_line:
+                    encoded_path = quote(stripped_line)
+                    if is_subpath(encoded_path, s_paths_all):
+                        paths.append(encoded_path)
+                    else:
+                        logging.error("Path is invalid: %s", unquote(encoded_path))
+                        return []
+    except Exception as e:
+        logging.error("Error loading paths from file: %s", str(e))
     return paths
 
 def is_subpath(path, base_paths):
@@ -414,6 +414,17 @@ def is_subpath(path, base_paths):
         if path.startswith(base_path):
             return True
     return False
+
+def get_paths_from_bitmap(bitmap, paths_all):
+    max_bitmap_value = (1 << len(paths_all)) - 1
+    if bitmap < 0 or bitmap > max_bitmap_value:
+        raise ValueError(f"Bitmap value {bitmap} is out of range. Must be between 0 and {max_bitmap_value}.")
+    selected_paths = []
+    binary_representation = bin(bitmap)[2:].zfill(len(paths_all))
+    for i, bit in enumerate(binary_representation):
+        if bit == '1':
+            selected_paths.append(paths_all[i])
+    return selected_paths
 
 
 async def main() :
@@ -427,14 +438,14 @@ async def main() :
     parser.add_argument("--purge", action=argparse.BooleanOptionalAction, type=bool, default=True, help="Purge removed files [Default: %(default)s]")
     parser.add_argument("--all", action=argparse.BooleanOptionalAction, type=bool, default=False, help="Download all folders [Default: %(default)s]")
     parser.add_argument("--location", metavar="<folder>", type=str, default=None, required=None, help="Path to store database files [Default: %(default)s]")
-    parser.add_argument('--paths', metavar="<file>", type=str, help='File containing paths to select (See paths.example)')
+    parser.add_argument('--paths', metavar="<file>", type=str, help='Bitmap of paths or a file containing paths to be selected (See paths.example)')
 
 
 
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.2.6 ***")
+    logging.info("*** xiaoya_emd version 1.3.0 ***")
     paths = []
     if args.all:
         paths = s_paths_all
@@ -443,10 +454,23 @@ async def main() :
             args.db = True
     else:
         if args.paths:
-            paths_from_file = load_paths_from_file(args.paths)
+            paths_from_file = []
+            is_bitmap = False
+
+            try:
+                paths_bitmap = int(args.paths)
+                paths_from_file = get_paths_from_bitmap(paths_bitmap, s_paths_all)
+                is_bitmap = True
+            except ValueError:
+                logging.info("Paths parameter is not a bitmap, attempting to load from file.")
+
+            if not is_bitmap:
+                paths_from_file = load_paths_from_file(args.paths)
+
             if not paths_from_file:
-                logging.error("Path file doesn't contain any valid paths: %s", args.paths)
+                logging.error("Paths file doesn't contain any valid paths or bitmap value is incorrect: %s", args.paths)
                 exit()
+
             for path in paths_from_file:
                 if not is_subpath(path, s_paths):
                     s_pool.pop(0)
