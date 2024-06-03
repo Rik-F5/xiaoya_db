@@ -68,7 +68,8 @@ s_pool = [
     "https://emby-data.tmxy.pp.ua/",
     "https://emby-data.poxi1221.eu.org/",
     "https://emby-data.ermaokj.cn/",
-    "https://emby-data.bdbd.fun/"
+    "https://emby-data.bdbd.fun/",
+    "https://emby-data.wwwh.eu.org"
 ]
 
 s_folder = [
@@ -433,7 +434,7 @@ async def main() :
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.2.5 ***")
+    logging.info("*** xiaoya_emd version 1.2.6 ***")
     paths = []
     if args.all:
         paths = s_paths_all
