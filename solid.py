@@ -106,11 +106,18 @@ def pick_a_pool_member(url_list):
             logger.debug("Testing: %s", member)
             response = urllib.request.urlopen(member)
             if response.getcode() == 200:
-                logger.info("Picked: %s", member)
-                return member
+                content = response.read()
+                try:
+                    content_decoded = content.decode('utf-8')
+                    if '每日更新' in content_decoded:
+                        logger.info("Picked: %s", member)
+                        return member
+                    else:
+                        logger.info("Content at %s does not contain '每日更新'", member)
+                except UnicodeDecodeError:
+                    logger.info("Non-UTF-8 content at %s", member)
         except Exception as e:
             logger.info("Error accessing %s: %s", member, e)
-            pass
     return None
 
 def current_amount(url, media, paths):
@@ -142,16 +149,24 @@ async def fetch_html(url, session, **kwargs) -> str:
     async with semaphore:
         async with session.request(method="GET", url=url) as resp:
             logger.debug("Request Headers for [%s]: [%s]", unquote(url), resp.request_info.headers)
-            resp.raise_for_status()       
+            resp.raise_for_status()
             logger.debug("Response Headers for [%s]: [%s]", unquote(url), resp.headers)
             logger.debug("Got response [%s] for URL: %s", resp.status, unquote(url))
-            return await resp.text()
+            try:
+                text = await resp.text()
+                return text
+            except UnicodeDecodeError:
+                logger.error("Non-UTF-8 content at %s", unquote(url))
+                return None
 
 async def parse(url, session, **kwargs) -> set:
     files = []
     directories = []
     try:
         html = await fetch_html(url=url, session=session, **kwargs)
+        if html is None:
+            logger.debug("Failed to fetch HTML content for URL: %s", unquote(url))
+            return files, directories
     except (
         aiohttp.ClientError,
         aiohttp.http_exceptions.HttpProcessingError,
@@ -167,35 +182,32 @@ async def parse(url, session, **kwargs) -> set:
         return files, directories
     except Exception as e:
         logger.exception(
-            "Non-aiohttp exception occured:  %s", getattr(e, "__dict__", {})
+            "Non-aiohttp exception occurred:  %s", getattr(e, "__dict__", {})
         )
         return files, directories
-    else:
-        soup = BeautifulSoup(html, 'html.parser')
-        for link in soup.find_all('a'):
-            href = link.get('href')
-            if href != '../' and not href.endswith('/') and href != 'scan.list':
-                try:
-                    abslink = urljoin(url, href)
-                except (urllib.error.URLError, ValueError):
-                    logger.exception("Error parsing URL: %s", unquote(link))
-                pass
+
+    soup = BeautifulSoup(html, 'html.parser')
+    for link in soup.find_all('a'):
+        href = link.get('href')
+        if href != '../' and not href.endswith('/') and href != 'scan.list':
+            try:
+                abslink = urljoin(url, href)
                 filename = unquote(urlparse(abslink).path)
                 timestamp_str = link.next_sibling.strip().split()[0:2]
-#TODO: Need to handle /cdn-cgi/l/email-protection
-                try:
-                    timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
-                except:
-                    logger.error("%s: %s", filename, timestamp_str)
-                    continue
+                # TODO: Need to handle /cdn-cgi/l/email-protection
+                timestamp = datetime.strptime(' '.join(timestamp_str), '%d-%b-%Y %H:%M')
                 timestamp_unix = int(timestamp.timestamp())
                 filesize = link.next_sibling.strip().split()[2]
                 files.append((abslink, filename, timestamp_unix, filesize))
-            elif href != '../':
-                directories.append(urljoin(url, href))
-            href = None
-        soup = None
-        return files, directories
+            except (urllib.error.URLError, ValueError):
+                logger.exception("Error parsing URL: %s", unquote(link))
+                continue
+            except Exception as e:
+                logger.exception("Unexpected error: %s", e)
+                continue
+        elif href != '../':
+            directories.append(urljoin(url, href))
+    return files, directories
 
 async def need_download(file, **kwargs):
     url, filename, timestamp, filesize = file
@@ -365,8 +377,8 @@ async def compare_databases(localdb, tempdb, total_amount):
         temp_filenames = set(filename[0] for filename in await cursor2.fetchall())
         gap = abs(len(temp_filenames) - total_amount)
 
-        if gap < 10 :
-            if not gap == 0: 
+        if gap < 10 and total_amount > 0:
+            if not gap == 0:
                 logger.warning("Total amount do not match: %d -> %d. But the gap %d is less than 10, purging anyway...", total_amount, len(temp_filenames), abs(len(temp_filenames) - total_amount))
             diff_filenames = local_filenames - temp_filenames
             return diff_filenames
@@ -453,7 +465,7 @@ async def main() :
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.3.5 ***")
+    logging.info("*** xiaoya_emd version 1.4.0 ***")
     paths = []
     if args.all:
         paths = s_paths_all
