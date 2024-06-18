@@ -19,6 +19,9 @@ Save it into /etc/profile.d/ to make it global avaiable after reboot
 ulimit -n 4096
 ```
 ---
+
+For Network mount, please add 'nolock' option. See [Issue#47](https://github.com/Rik-F5/xiaoya_db/issues/47#issuecomment-2162641424)
+
 ## Installation
 
 #### Clone the project
