@@ -64,21 +64,17 @@ s_pool = [
     "https://emby.kaiserver.uk/",
     "https://embyxiaoya.laogl.top/",
     "https://emby-data.raydoom.tk/",
-    "https://emby-data.5168168.xyz/",
     "https://emby-data.ermaokj.com/",
-    "https://emby-data.tmxy.pp.ua/",
     "https://emby-data.poxi1221.eu.org/",
     "https://emby-data.ermaokj.cn/",
     "https://emby-data.bdbd.fun/",
     "https://emby-data.wwwh.eu.org/",
     "https://emby-data.f1rst.top/",
-    "https://emby-data.520533.xyz/",
     "https://emby-data.ymschh.top/",
     "https://emby-data.wx1.us.kg/",
     "https://emby-data.r2s.site/",
     "https://emby-data.neversay.eu.org/",
-    "https://emby-data.800686.xyz/",
-    "https://emby-data.noyer.eu.org/"
+    "https://emby-data.800686.xyz/"
 ]
 
 s_folder = [
@@ -465,7 +461,7 @@ async def main() :
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.4.0 ***")
+    logging.info("*** xiaoya_emd version 1.4.1 ***")
     paths = []
     if args.all:
         paths = s_paths_all
