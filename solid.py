@@ -33,6 +33,7 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 
 s_paths_all = [
+    quote('115'),                                # 1024
     quote('PikPak/'),                           # 512
     quote('动漫/'),                              # 256
     quote('每日更新/'),                           # 128
@@ -48,6 +49,7 @@ s_paths_all = [
 
 
 s_paths = [
+    quote('115/'),
     quote('每日更新/'),
     quote('电影/2023/'),
     quote('纪录片（已刮削）/'),
@@ -64,7 +66,7 @@ s_pool = [
     "https://emby.kaiserver.uk/",
     "https://embyxiaoya.laogl.top/",
     "https://emby-data.raydoom.tk/",
-    "https://emby-data.ermaokj.com/",
+    #"https://emby-data.ermaokj.com/",
     "https://emby-data.poxi1221.eu.org/",
     "https://emby-data.ermaokj.cn/",
     "https://emby-data.bdbd.fun/",
@@ -461,7 +463,7 @@ async def main() :
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.4.1 ***")
+    logging.info("*** xiaoya_emd version 1.5.0 ***")
     paths = []
     if args.all:
         paths = s_paths_all
@@ -496,6 +498,9 @@ async def main() :
             paths = s_paths
 
     if args.media:
+        if not os.path.exists(os.path.join(args.media, '115')):
+            logging.warning("115 folder doesn't exist. Creating it anyway...This workaround will be removed in the next version.")
+            os.makedirs(os.path.join(args.media, '115'))
         if not test_media_folder(args.media, paths):
             logging.error("The %s doesn't contain the desired folders, please correct the --media parameter", args.media)
             exit()
