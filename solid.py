@@ -33,7 +33,7 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 
 s_paths_all = [
-    quote('115'),                                # 1024
+    quote('115/'),                                # 1024
     quote('PikPak/'),                           # 512
     quote('动漫/'),                              # 256
     quote('每日更新/'),                           # 128
