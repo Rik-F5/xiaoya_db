@@ -46,7 +46,13 @@ s_paths_all = [
     quote('📺画质演示测试（4K，8K，HDR，Dolby）/')  # 1
 ]
 
-
+t_paths = [
+    quote('115/'),
+    quote('每日更新/'),
+    quote('纪录片（已刮削）/'),
+    quote('音乐/'),
+    quote('综艺/')
+]
 
 s_paths = [
     quote('115/'),
@@ -185,7 +191,7 @@ async def parse(url, session, **kwargs) -> set:
     soup = BeautifulSoup(html, 'html.parser')
     for link in soup.find_all('a'):
         href = link.get('href')
-        if href != '../' and not href.endswith('/') and href != 'scan.list':
+        if href != '../' and not href.endswith('/') and not href.endswith('txt') and href != 'scan.list':
             try:
                 abslink = urljoin(url, href)
                 filename = unquote(urlparse(abslink).path)
@@ -461,7 +467,7 @@ async def main() :
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.5.1 ***")
+    logging.info("*** xiaoya_emd version 1.5.2 ***")
     paths = []
     if args.all:
         paths = s_paths_all
@@ -499,7 +505,7 @@ async def main() :
         if not os.path.exists(os.path.join(args.media, '115')):
             logging.warning("115 folder doesn't exist. Creating it anyway...This workaround will be removed in the next version.")
             os.makedirs(os.path.join(args.media, '115'))
-        if not test_media_folder(args.media, paths):
+        if not test_media_folder(args.media, t_paths):
             logging.error("The %s doesn't contain the desired folders, please correct the --media parameter", args.media)
             exit()
         else:
