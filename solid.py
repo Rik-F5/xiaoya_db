@@ -206,7 +206,7 @@ async def parse(url, session, **kwargs) -> set:
             except Exception as e:
                 logger.exception("Unexpected error: %s", e)
                 continue
-        elif href != '../':
+        elif href != '../' and not href.lower().endswith('.txt'):
             directories.append(urljoin(url, href))
     return files, directories
 
