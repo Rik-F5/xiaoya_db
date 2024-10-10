@@ -136,7 +136,7 @@ def current_amount(url, media, paths):
                     if match:
                         file = match.group(1)
                         if any(file.startswith(unquote(path)) for path in paths):
-                            if not re.match(hidden_pattern, file):
+                            if not re.match(hidden_pattern, file) and not file.lower().endswith('.txt'):
                                 matching_lines += 1
                 except:
                     logger.error("Error decoding line: %s", line)
