@@ -22,6 +22,40 @@ ulimit -n 4096
 
 For Network mount, please add 'nolock' option. See [Issue#47](https://github.com/Rik-F5/xiaoya_db/issues/47#issuecomment-2162641424)
 
+## Docker Run
+
+**docker-cli**
+
+```shell
+docker run -d \
+    --name=xiaoya-emd \
+    --restart=always \
+    --net=host \
+    -v 媒体库目录:/media \
+    -e CYCLE=86400 \
+    -e RESTART_AUTO_UPDATE=false \
+    ddsderek/xiaoya-emd:latest \
+    --media /media
+```
+
+**docker-compose**
+
+```yaml
+version: "3"
+services:
+    xiaoya-emd:
+        container_name: xiaoya-emd
+        restart: always
+        network_mode: host
+        volumes:
+            - 媒体库目录:/media
+        environment:
+            - CYCLE=86400
+            - RESTART_AUTO_UPDATE=false
+        image: ddsderek/xiaoya-emd:latest
+        command: --media /media
+```
+
 ## Installation
 
 #### Clone the project
