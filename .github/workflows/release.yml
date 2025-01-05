@@ -122,8 +122,8 @@ jobs:
         name: Get version
         id: get_version
         run: |
-          echo "VERSION=v${GITHUB_REF#refs/tags/}"
-          echo "VERSION=v${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "VERSION=${GITHUB_REF#refs/tags/}"
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - 
         name: Download Artifact
@@ -139,7 +139,7 @@ jobs:
         name: Release
         uses: softprops/action-gh-release@v2
         with:
-            name: ${{ env.VERSION }}
+            name: v${{ env.VERSION }}
             tag_name: ${{ env.VERSION }}
             files: |
                 ./solid-windows-amd64.exe
