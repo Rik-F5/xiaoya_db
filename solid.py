@@ -466,7 +466,7 @@ async def main() :
     args = parser.parse_args()
     if args.debug == True:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.5.4 ***")
+    logging.info("*** xiaoya_emd version 1.5.6 ***")
     paths = []
     if args.all:
         paths = s_paths_all
