@@ -37,7 +37,7 @@ s_paths_all = [
     quote('PikPak/'),                           # 512
     quote('动漫/'),                              # 256
     quote('每日更新/'),                           # 128
-    quote('电影/'),                              # 64 
+    quote('电影/'),                              # 64
     quote('电视剧/'),                            # 32
     quote('纪录片/'),                            # 16
     quote('纪录片（已刮削）/'),                    # 8
@@ -57,7 +57,6 @@ t_paths = [
 s_paths = [
     quote('115/'),
     quote('每日更新/'),
-    quote('电影/2023/'),
     quote('纪录片（已刮削）/'),
     quote('音乐/'),
     quote('综艺/')
@@ -94,9 +93,9 @@ s_ext = [
 
 # CF blocks urllib...
 
-custom_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
+CUSTOM_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
 opener = urllib.request.build_opener()
-opener.addheaders = [('User-Agent', custom_user_agent)]
+opener.addheaders = [('User-Agent', CUSTOM_USER_AGENT)]
 urllib.request.install_opener(opener)
 
 
@@ -247,7 +246,6 @@ async def download(file, session, **kwargs):
                     logger.error("Failed to download: %s [Response code: %s]", filename, response.status)
         except Exception as e:
             logger.exception("Download exception: %s", e)
-            
 
 async def download_files(files, session, **kwargs):
     download_tasks = set()
@@ -259,7 +257,6 @@ async def download_files(files, session, **kwargs):
             if len(download_tasks) > 100:
                 await asyncio.gather(*download_tasks)
     await asyncio.gather(*download_tasks)
-
 
 async def create_table(conn):
     try:
@@ -464,9 +461,9 @@ async def main() :
 
 
     args = parser.parse_args()
-    if args.debug == True:
+    if args.debug:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.5.7 ***")
+    logging.info("*** xiaoya_emd version 1.5.8 ***")
     paths = []
     if args.all:
         paths = s_paths_all
