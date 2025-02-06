@@ -1,5 +1,5 @@
 requests==2.32.3
 bs4==0.0.2
-aiohttp==3.11.11
+aiohttp==3.11.12
 aiofiles==24.1.0
 aiosqlite==0.20.0
