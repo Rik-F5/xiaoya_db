@@ -3,7 +3,7 @@
 # shellcheck disable=SC2068
 # shellcheck disable=SC2114
 
-IMAGE_VERSION=v1.0.1
+IMAGE_VERSION=v1.0.2
 
 Green="\033[32m"
 Red="\033[31m"
