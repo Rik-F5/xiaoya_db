@@ -161,47 +161,65 @@ async def fetch_html(url, session, **kwargs) -> str:
                 return None
 
 
-async def parse(url, session, **kwargs) -> set:
+async def parse(url, session, max_retries=3, **kwargs) -> set:
+    global html
+    retries = 0
     files = []
     directories = []
-    try:
-        html = await fetch_html(url=url, session=session, **kwargs)
-        if html is None:
-            logger.debug("Failed to fetch HTML content for URL: %s", unquote(url))
+    while True:
+        if retries < max_retries:
+            try:
+                html = await fetch_html(url=url, session=session, **kwargs)
+                if html is None:
+                    logger.debug("Failed to fetch HTML content for URL: %s", unquote(url))
+                    return files, directories
+                break
+            except aiohttp.ClientResponseError as e:
+                logger.error(
+                    "aiohttp ClientResponseError for %s [%s]: %s. Retrying (%d/%d)...",
+                    unquote(url),
+                    getattr(e, "status", None),
+                    getattr(e, "message", None),
+                    retries + 1,
+                    max_retries
+                )
+                retries += 1
+            except (aiohttp.ClientError,
+                    aiohttp.http_exceptions.HttpProcessingError,
+                    aiohttp.ClientPayloadError
+                    ) as e:
+                logger.error(
+                    "aiohttp exception for %s [%s]: %s",
+                    unquote(url),
+                    getattr(e, "status", None),
+                    getattr(e, "message", None),
+                )
+                return files, directories
+            except Exception as e:
+                logger.exception(
+                    "Non-aiohttp exception occurred:  %s", getattr(e, "__dict__", {})
+                )
+                return files, directories
+        else:
+            logger.error("Max retries reached for %s. Request failed.", unquote(url))
             return files, directories
-    except (
-        aiohttp.ClientError,
-        aiohttp.http_exceptions.HttpProcessingError,
-        aiohttp.ClientPayloadError,
-        aiohttp.ClientResponseError,
-    ) as e:
-        logger.error(
-            "aiohttp exception for %s [%s]: %s",
-            unquote(url),
-            getattr(e, "status", None),
-            getattr(e, "message", None),
-        )
-        return files, directories
-    except Exception as e:
-        logger.exception(
-            "Non-aiohttp exception occurred:  %s", getattr(e, "__dict__", {})
-        )
-        return files, directories
 
     soup = BeautifulSoup(html, "html.parser")
     for link in soup.find_all("a"):
         href = link.get("href")
+        # TODO: Need to handle /cdn-cgi/l/email-protection
+        if href.__contains__("/cdn-cgi/l/email-protection"):
+            continue
         if (
-            href != "../"
-            and not href.endswith("/")
-            and not href.endswith("txt")
-            and href != "scan.list"
+                href != "../"
+                and not href.endswith("/")
+                and not href.endswith("txt")
+                and href != "scan.list"
         ):
             try:
                 abslink = urljoin(url, href)
                 filename = unquote(urlparse(abslink).path)
                 timestamp_str = link.next_sibling.strip().split()[0:2]
-                # TODO: Need to handle /cdn-cgi/l/email-protection
                 timestamp = datetime.strptime(" ".join(timestamp_str), "%d-%b-%Y %H:%M")
                 timestamp_unix = int(timestamp.timestamp())
                 filesize = link.next_sibling.strip().split()[2]
