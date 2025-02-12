@@ -171,7 +171,9 @@ async def parse(url, session, max_retries=3, **kwargs) -> set:
             try:
                 html = await fetch_html(url=url, session=session, **kwargs)
                 if html is None:
-                    logger.debug("Failed to fetch HTML content for URL: %s", unquote(url))
+                    logger.debug(
+                        "Failed to fetch HTML content for URL: %s", unquote(url)
+                    )
                     return files, directories
                 break
             except aiohttp.ClientResponseError as e:
@@ -181,13 +183,14 @@ async def parse(url, session, max_retries=3, **kwargs) -> set:
                     getattr(e, "status", None),
                     getattr(e, "message", None),
                     retries + 1,
-                    max_retries
+                    max_retries,
                 )
                 retries += 1
-            except (aiohttp.ClientError,
-                    aiohttp.http_exceptions.HttpProcessingError,
-                    aiohttp.ClientPayloadError
-                    ) as e:
+            except (
+                aiohttp.ClientError,
+                aiohttp.http_exceptions.HttpProcessingError,
+                aiohttp.ClientPayloadError,
+            ) as e:
                 logger.error(
                     "aiohttp exception for %s [%s]: %s",
                     unquote(url),
@@ -211,10 +214,10 @@ async def parse(url, session, max_retries=3, **kwargs) -> set:
         if href.__contains__("/cdn-cgi/l/email-protection"):
             continue
         if (
-                href != "../"
-                and not href.endswith("/")
-                and not href.endswith("txt")
-                and href != "scan.list"
+            href != "../"
+            and not href.endswith("/")
+            and not href.endswith("txt")
+            and href != "scan.list"
         ):
             try:
                 abslink = urljoin(url, href)
@@ -597,7 +600,7 @@ async def main():
     args = parser.parse_args()
     if args.debug:
         logging.getLogger("emd").setLevel(logging.DEBUG)
-    logging.info("*** xiaoya_emd version 1.6.0 ***")
+    logging.info("*** xiaoya_emd version 1.6.1 ***")
     paths = []
     if args.all:
         paths = s_paths_all
