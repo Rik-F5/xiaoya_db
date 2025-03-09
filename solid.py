@@ -32,6 +32,8 @@ logging.getLogger("chardet.charsetprober").disabled = True
 
 
 s_paths_all = [
+    quote("测试/"),  # 8192
+    quote("json/"),  # 4096
     quote("ISO/"),  # 2048
     quote("115/"),  # 1024
     quote("PikPak/"),  # 512
